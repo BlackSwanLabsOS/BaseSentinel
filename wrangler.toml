@@ -5,7 +5,7 @@ compatibility_date = "2026-07-28"
 # Receiving wallet for M2M scan payments (replace with your address).
 [vars]
 PAYMENT_ADDRESS = "0x21360A04853b85a8d2E918b73f97C8ccf5939946"
-NETWORK = "base-sepolia"
+NETWORK = "base"
 
 [[kv_namespaces]]
 binding = "SCAN_CACHE"

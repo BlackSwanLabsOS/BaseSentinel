@@ -1,5 +1,6 @@
 import type { Env } from "../types";
 import { resolveNetwork } from "../config/network";
+import { notifyDiscordFromEnv } from "./discord";
 
 /** Threat records are kept without TTL (durable intel archive). */
 const DAY_INDEX_TTL_SECONDS = 90 * 86_400; // 90 days
@@ -31,6 +32,11 @@ interface ScamScanInput {
   bytecodeLength: number;
 }
 
+export interface RecordThreatOptions {
+  /** Prefer ctx.waitUntil in Cron so Discord I/O doesn't block the batch. */
+  waitUntil?: (promise: Promise<unknown>) => void;
+}
+
 function threatContractKey(address: string): string {
   return `threat:contract:${address}`;
 }
@@ -51,10 +57,12 @@ export function isValidFeedDate(date: string): boolean {
 /**
  * Persists a SCAM verdict into the threat-intel archive + daily index.
  * Idempotent per address: updates lastSeen / risk metadata if already known.
+ * First-seen SCAMs also fan out to SSE buffer + Discord webhook (if configured).
  */
 export async function recordThreat(
   env: Env,
   scan: ScamScanInput,
+  options: RecordThreatOptions = {},
 ): Promise<void> {
   if (scan.riskScore < 75) {
     return;
@@ -65,6 +73,7 @@ export async function recordThreat(
   const key = threatContractKey(address);
 
   const existing = (await env.SCAN_CACHE.get(key, "json")) as ThreatRecord | null;
+  const isNew = !existing;
 
   const record: ThreatRecord = existing
     ? {
@@ -88,6 +97,76 @@ export async function recordThreat(
 
   const day = utcDateString(new Date(now));
   await appendToDayIndex(env, day, address);
+
+  const shouldFanOut = isNew || record.riskScore > (existing?.riskScore ?? 0);
+
+  // Fan-out buffer for SSE sniper clients (pollable live feed).
+  if (shouldFanOut) {
+    await pushRecentThreat(env, {
+      id: `${now}|${address}`,
+      contract: address,
+      network: record.network,
+      riskScore: record.riskScore,
+      timestamp: now,
+      reasons: record.reasons,
+    });
+  }
+
+  // Discord only on first detection — avoids spam on cache refreshes / re-scans.
+  if (isNew) {
+    const notifyTask = notifyDiscordFromEnv(env, {
+      address: record.address,
+      network: record.network,
+      riskScore: record.riskScore,
+      reasons: record.reasons,
+      timestamp: record.timestamp,
+    });
+
+    if (options.waitUntil) {
+      options.waitUntil(notifyTask);
+    } else {
+      await notifyTask;
+    }
+  }
+}
+
+const RECENT_THREATS_KEY = "threat:recent";
+const MAX_RECENT_THREATS = 100;
+
+export interface RecentThreatEvent {
+  id: string;
+  contract: string;
+  network: string;
+  riskScore: number;
+  timestamp: string;
+  reasons: string[];
+}
+
+async function pushRecentThreat(
+  env: Env,
+  event: RecentThreatEvent,
+): Promise<void> {
+  const current =
+    ((await env.SCAN_CACHE.get(RECENT_THREATS_KEY, "json")) as
+      | RecentThreatEvent[]
+      | null) ?? [];
+
+  const next = [event, ...current.filter((e) => e.contract !== event.contract)];
+  await env.SCAN_CACHE.put(
+    RECENT_THREATS_KEY,
+    JSON.stringify(next.slice(0, MAX_RECENT_THREATS)),
+  );
+}
+
+/** Newest-first recent SCAM events for live SSE polling. */
+export async function listRecentThreats(
+  env: Env,
+): Promise<RecentThreatEvent[]> {
+  return (
+    ((await env.SCAN_CACHE.get(RECENT_THREATS_KEY, "json")) as
+      | RecentThreatEvent[]
+      | null) ?? []
+  );
 }
 
 async function appendToDayIndex(

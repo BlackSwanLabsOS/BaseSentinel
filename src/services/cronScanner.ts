@@ -72,9 +72,12 @@ async function saveCronState(env: Env, state: CronState): Promise<void> {
 /**
  * Background job: discover newly paired tokens and scan them.
  * Payment gate is bypassed (internal cron → scanContract directly).
- * SCAM hits are persisted via scanner → threatIntel.
+ * SCAM hits are persisted via scanner → threatIntel (+ Discord via waitUntil).
  */
-export async function runScheduledScan(env: Env): Promise<CronRunResult> {
+export async function runScheduledScan(
+  env: Env,
+  ctx?: ExecutionContext,
+): Promise<CronRunResult> {
   const started = Date.now();
   const network = resolveNetwork(env);
   const previous = await getCronState(env);
@@ -108,7 +111,9 @@ export async function runScheduledScan(env: Env): Promise<CronRunResult> {
       }
 
       try {
-        const result = await scanContract(token.address, env);
+        const result = await scanContract(token.address, env, {
+          waitUntil: ctx ? (p) => ctx.waitUntil(p) : undefined,
+        });
         stats.scanned += 1;
         if (result.status === "SCAM") {
           stats.scams += 1;

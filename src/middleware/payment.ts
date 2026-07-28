@@ -24,7 +24,7 @@ export const PAYMENT_NETWORK: NetworkId = "base-sepolia";
 /** @deprecated Prefer PAYMENT_PRODUCTS.scan.minAmount */
 export const REQUIRED_USDC_AMOUNT = 1000n;
 
-export type PaymentProductId = "scan" | "daily_feed";
+export type PaymentProductId = "scan" | "daily_feed" | "live_stream";
 
 export interface PaymentProduct {
   id: PaymentProductId;
@@ -53,6 +53,14 @@ export const PAYMENT_PRODUCTS: Record<PaymentProductId, PaymentProduct> = {
     amountDisplay: "0.01 USDC",
     description: "BaseSentinel daily threat intelligence feed",
     bindingLabel: "feed date",
+  },
+  live_stream: {
+    id: "live_stream",
+    minAmount: 5_000n, // 0.005 USDC per UTC day of streaming
+    amountAtomic: "5000",
+    amountDisplay: "0.005 USDC",
+    description: "BaseSentinel live threat SSE stream",
+    bindingLabel: "stream day",
   },
 };
 
@@ -99,6 +107,11 @@ export interface EnforcePaymentOptions {
   bindingKey: string;
   resourceUrl?: string;
   resourceDescription?: string;
+  /**
+   * When true, an already-consumed proof for the same product+binding is allowed.
+   * Needed for SSE reconnects within the paid window.
+   */
+  allowReuse?: boolean;
 }
 
 export class PaymentRequiredError extends Error {
@@ -270,7 +283,9 @@ export function build402Response(
     resourceUrl ??
     (productId === "daily_feed"
       ? "https://basesentinel.local/api/feed/daily"
-      : "https://basesentinel.local/scan/{address}");
+      : productId === "live_stream"
+        ? "https://basesentinel.local/stream/threats"
+        : "https://basesentinel.local/scan/{address}");
   const x402 = buildX402PaymentRequired(env, resource, product);
 
   const body = {
@@ -416,6 +431,10 @@ export async function enforcePayment(
       );
     }
 
+    if (options.allowReuse && boundTo === bindingKey) {
+      return;
+    }
+
     throw new PaymentReplayError();
   }
 
@@ -436,6 +455,14 @@ export async function enforcePayment(
 
 export function dailyFeedBindingKey(date: string): string {
   return `daily-feed:${date}`;
+}
+
+export function liveStreamBindingKey(date = utcDateForBinding()): string {
+  return `live-stream:${date}`;
+}
+
+function utcDateForBinding(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
 }
 
 // Re-export helpers used by discovery / callers

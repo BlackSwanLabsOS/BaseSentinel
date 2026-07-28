@@ -6,8 +6,13 @@ export interface Env {
   /** Shared secret for admin threat-intel endpoints (X-Admin-Key). */
   ADMIN_API_KEY: string;
   /**
-   * Active chain: "base-sepolia" (default) or "base".
+   * Active chain: "base-sepolia" or "base".
    * Controls Alchemy RPC + USDC contract used for payment verification.
    */
   NETWORK: string;
+  /**
+   * Discord Incoming Webhook URL for SCAM alerts.
+   * Optional — when unset, notifications are skipped.
+   */
+  DISCORD_WEBHOOK_URL?: string;
 }

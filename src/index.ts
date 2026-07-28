@@ -5,6 +5,7 @@ import {
   dailyFeedBindingKey,
   enforcePayment,
   InvalidPaymentProofError,
+  liveStreamBindingKey,
   PaymentBindingMismatchError,
   PaymentBoundToOtherContractError,
   PaymentReplayError,
@@ -22,6 +23,7 @@ import {
   isValidFeedDate,
   utcDateString,
 } from "./services/threatIntel";
+import { createThreatEventStream } from "./services/threatStream";
 import { getCronState, runScheduledScan } from "./services/cronScanner";
 import { normalizeEthereumAddress } from "./utils/validation";
 
@@ -53,8 +55,38 @@ function extractRawScanAddress(url: URL): string | null {
 
 function isDiscoveryPath(pathname: string): boolean {
   return (
-    pathname === "/.well-known/ai-plugin.json" || pathname === "/openapi.json"
+    pathname === "/.well-known/ai-plugin.json" ||
+    pathname === "/openapi.json" ||
+    pathname === "/stream/threats"
   );
+}
+
+async function handleThreatStreamRequest(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (!isAdminAuthorized(request, env)) {
+    try {
+      await enforcePayment(request, env, {
+        product: "live_stream",
+        bindingKey: liveStreamBindingKey(),
+        resourceUrl: request.url,
+        allowReuse: true,
+      });
+    } catch (error) {
+      const paidError = paymentErrorResponse(error, env, request.url);
+      if (paidError) {
+        return paidError;
+      }
+      throw error;
+    }
+  }
+
+  const cursor =
+    request.headers.get("Last-Event-ID")?.trim() ||
+    new URL(request.url).searchParams.get("cursor");
+
+  return withCors(createThreatEventStream(env, { cursor }));
 }
 
 function paymentErrorResponse(
@@ -178,6 +210,11 @@ export default {
       return handleDailyFeedRequest(request, env, url);
     }
 
+    // Live SCAM alerts for sniper bots (short SSE sessions + auto-retry).
+    if (url.pathname === "/stream/threats") {
+      return handleThreatStreamRequest(request, env);
+    }
+
     // Legacy admin-only feed (diagnostics).
     if (url.pathname === "/api/admin/daily-feed") {
       const authError = requireAdmin(request, env);
@@ -209,6 +246,7 @@ export default {
         products: {
           scan: `${origin}/scan/{address}`,
           daily_feed: `${origin}/api/feed/daily?date=YYYY-MM-DD`,
+          live_stream: `${origin}/stream/threats`,
         },
         health: `${origin}/health`,
       });
@@ -277,8 +315,8 @@ export default {
   async scheduled(
     _event: ScheduledEvent,
     env: Env,
-    _ctx: ExecutionContext,
+    ctx: ExecutionContext,
   ): Promise<void> {
-    await runScheduledScan(env);
+    await runScheduledScan(env, ctx);
   },
 } satisfies ExportedHandler<Env>;

@@ -8,7 +8,7 @@ import {
 } from "./analyzer";
 import { getContractBytecode } from "./alchemy";
 import { fetchGoPlusTokenSecurity } from "./goplus";
-import { recordThreat } from "./threatIntel";
+import { recordThreat, type RecordThreatOptions } from "./threatIntel";
 import {
   isValidEthereumAddress,
   normalizeEthereumAddress,
@@ -26,6 +26,10 @@ export interface ScanResult {
   cachedAt: string;
 }
 
+export interface ScanOptions {
+  waitUntil?: RecordThreatOptions["waitUntil"];
+}
+
 function cacheKey(network: string, contractAddress: string): string {
   return `contract:${network}:${contractAddress}`;
 }
@@ -37,6 +41,7 @@ function cacheKey(network: string, contractAddress: string): string {
 export async function scanContract(
   contractAddress: string,
   env: Env,
+  options: ScanOptions = {},
 ): Promise<ScanResult> {
   const address = normalizeEthereumAddress(contractAddress);
   if (!address || !isValidEthereumAddress(address)) {
@@ -77,7 +82,7 @@ export async function scanContract(
   });
 
   if (result.status === "SCAM") {
-    await recordThreat(env, result);
+    await recordThreat(env, result, { waitUntil: options.waitUntil });
   }
 
   return result;

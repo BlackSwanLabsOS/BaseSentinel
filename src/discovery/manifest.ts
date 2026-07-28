@@ -76,6 +76,11 @@ export function buildAiPluginManifest(origin: string, env: Env) {
           amount_atomic: PAYMENT_PRODUCTS.daily_feed.amountAtomic,
           url_template: `${origin}/api/feed/daily?date=YYYY-MM-DD`,
         },
+        live_stream: {
+          price: PAYMENT_PRODUCTS.live_stream.amountDisplay,
+          amount_atomic: PAYMENT_PRODUCTS.live_stream.amountAtomic,
+          url_template: `${origin}/stream/threats`,
+        },
       },
       price: PAYMENT_AMOUNT,
       amount_atomic: "1000",
