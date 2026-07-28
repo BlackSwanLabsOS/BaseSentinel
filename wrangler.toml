@@ -1,0 +1,16 @@
+name = "base-sentinel"
+main = "src/index.ts"
+compatibility_date = "2026-07-28"
+
+# Receiving wallet for M2M scan payments (replace with your address).
+[vars]
+PAYMENT_ADDRESS = "0x21360A04853b85a8d2E918b73f97C8ccf5939946"
+NETWORK = "base-sepolia"
+
+[[kv_namespaces]]
+binding = "SCAN_CACHE"
+id = "083d1d22fbd0476798f3fdaa6cdad67d"
+
+# Auto-discover + scan newly paired tokens every 5 minutes.
+[triggers]
+crons = ["*/5 * * * *"]
