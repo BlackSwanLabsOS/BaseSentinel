@@ -4,7 +4,6 @@ export type NetworkId = "base-sepolia" | "base";
 
 /** Official Circle USDC contracts (6 decimals). */
 export const USDC_BY_NETWORK: Record<NetworkId, string> = {
-  // Correct Circle Sepolia address — Gemini's prompt had a typo here.
   "base-sepolia": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
 };
