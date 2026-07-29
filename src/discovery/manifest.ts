@@ -12,9 +12,9 @@ import {
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type, X-Payment-Proof, X-Payment-Signature, PAYMENT-SIGNATURE",
+    "Content-Type, X-Payment-Proof, X-Payment-Signature, PAYMENT-SIGNATURE, X-Admin-Key",
   "Access-Control-Expose-Headers":
     "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Payment-Required, X-Payment-Amount, X-Payment-Amount-Display, X-Payment-Network, X-Payment-Address, X-Payment-Recipient, X-Payment-Asset, X-Payment-Token, X-Payment-Product",
   "Access-Control-Max-Age": "86400",
@@ -58,7 +58,7 @@ export function buildAiPluginManifest(origin: string, env: Env) {
     description_for_human:
       "Base smart-contract threat intel: bytecode + GoPlus + honeypot.is, pay-per-call USDC.",
     description_for_model:
-      `${PUBLIC_INTEL_SUMMARY} Returns SAFE/SUSPICIOUS/SCAM plus agent verdict CLEAR/CAUTION/AVOID. Scan=${PAYMENT_PRODUCTS.scan.amountDisplay}; premium dossier=${PAYMENT_PRODUCTS.dossier.amountDisplay}. HTTP 402 USDC.`,
+      `${PUBLIC_INTEL_SUMMARY} Returns SAFE/SUSPICIOUS/SCAM plus agent verdict CLEAR/CAUTION/AVOID. Scan=${PAYMENT_PRODUCTS.scan.amountDisplay}; premium dossier=${PAYMENT_PRODUCTS.dossier.amountDisplay}; 7-day watch=${PAYMENT_PRODUCTS.watch.amountDisplay}. HTTP 402 USDC.`,
     auth: {
       type: "none",
     },
@@ -81,6 +81,13 @@ export function buildAiPluginManifest(origin: string, env: Env) {
           price: PAYMENT_PRODUCTS.dossier.amountDisplay,
           amount_atomic: PAYMENT_PRODUCTS.dossier.amountAtomic,
           url_template: `${origin}/dossier/{address}`,
+        },
+        watch: {
+          price: PAYMENT_PRODUCTS.watch.amountDisplay,
+          amount_atomic: PAYMENT_PRODUCTS.watch.amountAtomic,
+          url_template: `${origin}/watch`,
+          method: "POST",
+          ttl_seconds: 604800,
         },
         daily_feed: {
           price: PAYMENT_PRODUCTS.daily_feed.amountDisplay,
@@ -327,6 +334,84 @@ export function buildOpenApiDocument(origin: string, env: Env) {
           },
         },
       },
+      "/watch": {
+        post: {
+          operationId: "createWatchSubscription",
+          summary: "7-day watchdog webhook subscription",
+          description:
+            `Pay ${PAYMENT_PRODUCTS.watch.amountDisplay} to watch a Base address. Cron re-scans (batched) and POSTs STATUS_CHANGED to webhook_url when verdict, tax, or risk_flags change. Auto-expires after 7 days.`,
+          parameters: [
+            {
+              name: "X-Payment-Proof",
+              in: "header",
+              required: true,
+              schema: {
+                type: "string",
+                pattern: "^0x[a-fA-F0-9]{64}$",
+              },
+              description: `USDC tx hash for ${PAYMENT_PRODUCTS.watch.amountDisplay}, bound to target_address + webhook_url`,
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["target_address", "webhook_url"],
+                  properties: {
+                    target_address: {
+                      type: "string",
+                      pattern: "^0x[a-fA-F0-9]{40}$",
+                    },
+                    webhook_url: {
+                      type: "string",
+                      format: "uri",
+                      description: "HTTPS webhook URL (no private/loopback hosts)",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Watch created",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      ok: { type: "boolean" },
+                      watch_id: { type: "string" },
+                      target_address: { type: "string" },
+                      webhook_url: { type: "string" },
+                      ttl_seconds: { type: "integer", example: 604800 },
+                      expires_at: { type: "string", format: "date-time" },
+                      baseline: {
+                        type: "object",
+                        properties: {
+                          verdict: {
+                            type: ["string", "null"],
+                            enum: ["CLEAR", "CAUTION", "AVOID", null],
+                          },
+                          tax: { type: ["number", "null"] },
+                          risk_flags: {
+                            type: "array",
+                            items: { type: "string" },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "402": { description: "Payment required" },
+            "400": { description: "Invalid body, address, webhook, or payment" },
+          },
+        },
+      },
       "/.well-known/ai-plugin.json": {
         get: {
           operationId: "getAiPluginManifest",
@@ -356,6 +441,7 @@ export function buildX402WellKnown(origin: string, env: Env) {
   const network = resolveNetwork(env);
   const usdc = getUsdcContractAddress(network);
   const caip2 = network === "base" ? "eip155:8453" : "eip155:84532";
+  const now = new Date().toISOString();
 
   return {
     x402Version: 2,
@@ -364,12 +450,51 @@ export function buildX402WellKnown(origin: string, env: Env) {
     network: caip2,
     payTo: env.PAYMENT_ADDRESS,
     asset: usdc,
+    /** Declares BaseSentinel MVP settlement (not EIP-3009 / CDP facilitator). */
+    settlement: "tx_hash_proof",
+    proofHeader: "X-Payment-Proof",
+    generated_at: now,
+    updated_at: now,
     openapi: `${origin}/openapi.json`,
     ai_plugin: `${origin}/.well-known/ai-plugin.json`,
+    owner_url: "https://blackswanlabs.pl",
+    owner_contact: "blackswanlabsos@gmail.com",
+    category: "trust",
+    tags: [
+      "x402",
+      "base",
+      "security",
+      "threat-intel",
+      "sniper-alpha",
+      "honeypot",
+      "scam-detection",
+    ],
     capabilities: PUBLIC_INTEL_CAPABILITIES,
     extensions: {
       bazaar: {
         discoverable: true,
+        name: "BaseSentinel",
+        description: PUBLIC_INTEL_SHORT,
+        category: "trust",
+        tags: [
+          "x402",
+          "base",
+          "security",
+          "threat-intel",
+          "sniper-alpha",
+          "honeypot",
+          "scam-detection",
+        ],
+        owner_url: "https://blackswanlabs.pl",
+        owner_contact: "blackswanlabsos@gmail.com",
+        settlement: "tx_hash_proof",
+        proofHeader: "X-Payment-Proof",
+      },
+      baseSentinel: {
+        settlement: "tx_hash_proof",
+        proofHeader: "X-Payment-Proof",
+        binding: "one_tx_hash_per_product_resource",
+        humanNetwork: network,
       },
     },
     services: [
@@ -383,6 +508,7 @@ export function buildX402WellKnown(origin: string, env: Env) {
         amountDisplay: PAYMENT_PRODUCTS.scan.amountDisplay,
         scheme: "exact",
         proofHeader: "X-Payment-Proof",
+        settlement: "tx_hash_proof",
       },
       {
         name: "dossier",
@@ -394,6 +520,20 @@ export function buildX402WellKnown(origin: string, env: Env) {
         amountDisplay: PAYMENT_PRODUCTS.dossier.amountDisplay,
         scheme: "exact",
         proofHeader: "X-Payment-Proof",
+        settlement: "tx_hash_proof",
+      },
+      {
+        name: "watch",
+        method: "POST",
+        path: "/watch",
+        url: `${origin}/watch`,
+        description: PAYMENT_PRODUCTS.watch.description,
+        amount: PAYMENT_PRODUCTS.watch.amountAtomic,
+        amountDisplay: PAYMENT_PRODUCTS.watch.amountDisplay,
+        scheme: "exact",
+        proofHeader: "X-Payment-Proof",
+        settlement: "tx_hash_proof",
+        ttlSeconds: 604800,
       },
       {
         name: "daily_feed",
@@ -405,6 +545,7 @@ export function buildX402WellKnown(origin: string, env: Env) {
         amountDisplay: PAYMENT_PRODUCTS.daily_feed.amountDisplay,
         scheme: "exact",
         proofHeader: "X-Payment-Proof",
+        settlement: "tx_hash_proof",
       },
       {
         name: "live_stream",
@@ -416,6 +557,7 @@ export function buildX402WellKnown(origin: string, env: Env) {
         amountDisplay: PAYMENT_PRODUCTS.live_stream.amountDisplay,
         scheme: "exact",
         proofHeader: "X-Payment-Proof",
+        settlement: "tx_hash_proof",
         output: "text/event-stream",
       },
     ],

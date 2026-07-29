@@ -1,0 +1,13 @@
+{
+  "name": "ontario-paid-listing",
+  "private": true,
+  "type": "module",
+  "description": "Pay Ontario Protocol 0.50 USDC listing fee via EIP-3009 / x402",
+  "scripts": {
+    "list": "node list.mjs",
+    "sandbox": "node list.mjs --sandbox"
+  },
+  "dependencies": {
+    "viem": "^2.31.0"
+  }
+}

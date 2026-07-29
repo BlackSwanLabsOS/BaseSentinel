@@ -22,7 +22,8 @@ export type PaymentProductId =
   | "scan"
   | "daily_feed"
   | "live_stream"
-  | "dossier";
+  | "dossier"
+  | "watch";
 
 export interface PaymentProduct {
   id: PaymentProductId;
@@ -71,6 +72,15 @@ export const PAYMENT_PRODUCTS: Record<PaymentProductId, PaymentProduct> = {
     description:
       "Premium Base dossier: security verdict + market structure (deployer %, top holders, LP status)",
     bindingLabel: "contract",
+  },
+  watch: {
+    id: "watch",
+    minAmount: 500_000n, // 0.50 USDC
+    amountAtomic: "500000",
+    amountDisplay: "0.50 USDC",
+    description:
+      "7-day watchdog: re-scan a Base address on cron and POST webhook on verdict/tax/flag changes",
+    bindingLabel: "watch subscription",
   },
 };
 
@@ -226,6 +236,165 @@ function buildPaymentInfo(
 }
 
 /**
+ * x402 v2 Bazaar discovery extension ({ info, schema }).
+ * Spec: https://github.com/coinbase/x402/blob/main/specs/extensions/bazaar.md
+ */
+function buildBazaarDiscoveryExtension(product: PaymentProduct) {
+  const isWatch = product.id === "watch";
+  const outputExample = isWatch
+    ? {
+        ok: true,
+        watch_id: "849e3c0d-cd32-4b62-9240-b4db1c7322fc",
+        target_address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        ttl_seconds: 604800,
+        expires_at: "2026-08-05T17:53:31.546Z",
+        baseline: {
+          verdict: "CAUTION",
+          tax: 0,
+          risk_flags: ["UNVERIFIED_SOURCE"],
+        },
+      }
+    : product.id === "dossier"
+      ? {
+          address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          network: "base",
+          verdict: "CLEAR",
+          verdict_score: 88,
+          risk_flags: [],
+          market_structure: {
+            deployer_balance_pct: null,
+            top_5_holders_pct: null,
+            lp_status: "UNKNOWN",
+            is_whale_concentrated: false,
+            notes: [],
+          },
+        }
+      : {
+          status: "SAFE",
+          riskScore: 12,
+          verdict: "CLEAR",
+          verdict_score: 88,
+          risk_flags: [],
+          reasons: ["None"],
+        };
+
+  if (isWatch) {
+    return {
+      info: {
+        input: {
+          type: "http" as const,
+          method: "POST" as const,
+          bodyType: "json" as const,
+          body: {
+            target_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            webhook_url: "https://webhook.site/example",
+          },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Payment-Proof": "<base_usdc_tx_hash>",
+          },
+        },
+        output: {
+          type: "json",
+          example: outputExample,
+        },
+      },
+      schema: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        type: "object",
+        properties: {
+          input: {
+            type: "object",
+            properties: {
+              type: { type: "string", const: "http" },
+              method: {
+                type: "string",
+                enum: ["POST", "PUT", "PATCH"],
+              },
+              bodyType: {
+                type: "string",
+                enum: ["json", "form-data", "text"],
+              },
+              body: { type: "object" },
+              queryParams: {
+                type: "object",
+                additionalProperties: { type: "string" },
+              },
+              headers: {
+                type: "object",
+                additionalProperties: { type: "string" },
+              },
+            },
+            required: ["type", "method", "bodyType", "body"],
+            additionalProperties: false,
+          },
+          output: {
+            type: "object",
+            properties: {
+              type: { type: "string" },
+              example: { type: "object" },
+            },
+            required: ["type"],
+          },
+        },
+        required: ["input"],
+      },
+    };
+  }
+
+  return {
+    info: {
+      input: {
+        type: "http" as const,
+        method: "GET" as const,
+        headers: {
+          "X-Payment-Proof": "<base_usdc_tx_hash>",
+        },
+      },
+      output: {
+        type: "json",
+        example: outputExample,
+      },
+    },
+    schema: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        input: {
+          type: "object",
+          properties: {
+            type: { type: "string", const: "http" },
+            method: {
+              type: "string",
+              enum: ["GET", "HEAD", "DELETE"],
+            },
+            queryParams: {
+              type: "object",
+              additionalProperties: { type: "string" },
+            },
+            headers: {
+              type: "object",
+              additionalProperties: { type: "string" },
+            },
+          },
+          required: ["type", "method"],
+          additionalProperties: false,
+        },
+        output: {
+          type: "object",
+          properties: {
+            type: { type: "string" },
+            example: { type: "object" },
+          },
+          required: ["type"],
+        },
+      },
+      required: ["input"],
+    },
+  };
+}
+
+/**
  * x402 v2 PaymentRequired envelope (decoded form of PAYMENT-REQUIRED header).
  */
 function buildX402PaymentRequired(
@@ -258,35 +427,13 @@ function buildX402PaymentRequired(
       },
     ],
     extensions: {
-      bazaar: {
-        discoverable: true,
-        info: {
-          input: {
-            type: "http",
-            method: "GET",
-            headers: {
-              "X-Payment-Proof": "<base_usdc_tx_hash>",
-            },
-          },
-          output: {
-            type: "json",
-            example: {
-              status: "SAFE",
-              riskScore: 12,
-              verdict: "CLEAR",
-              verdict_score: 88,
-              risk_flags: [],
-              reasons: ["None"],
-            },
-          },
-        },
-      },
+      bazaar: buildBazaarDiscoveryExtension(product),
       baseSentinel: {
         product: product.id,
         proofHeader: PAYMENT_PROOF_HEADER,
         binding: `one_tx_hash_per_${product.bindingLabel.replace(/\s+/g, "_")}`,
         humanNetwork: info.network,
-        settlement: "onchain_usdc_tx_hash",
+        settlement: "tx_hash_proof",
       },
     },
   };
@@ -326,7 +473,11 @@ export function build402Response(
       ? "https://basesentinel.local/api/feed/daily"
       : productId === "live_stream"
         ? "https://basesentinel.local/stream/threats"
-        : "https://basesentinel.local/scan/{address}");
+        : productId === "watch"
+          ? "https://basesentinel.local/watch"
+          : productId === "dossier"
+            ? "https://basesentinel.local/dossier/{address}"
+            : "https://basesentinel.local/scan/{address}");
   const x402 = buildX402PaymentRequired(env, resource, product);
 
   const body = {
@@ -500,6 +651,14 @@ export function dailyFeedBindingKey(date: string): string {
 
 export function liveStreamBindingKey(date = utcDateForBinding()): string {
   return `live-stream:${date}`;
+}
+
+/** Stable payment binding for a watch (address + webhook fingerprint). */
+export function watchBindingKey(
+  targetAddress: string,
+  webhookFingerprint: string,
+): string {
+  return `watch:${targetAddress.toLowerCase()}:${webhookFingerprint}`;
 }
 
 function utcDateForBinding(date = new Date()): string {

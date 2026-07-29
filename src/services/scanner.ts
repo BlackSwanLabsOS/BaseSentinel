@@ -46,6 +46,8 @@ export interface ScanResult {
 export interface ScanOptions {
   waitUntil?: RecordThreatOptions["waitUntil"];
   listing?: ListingContext;
+  /** Skip SCAN_CACHE read (still writes cache). Used by watchdog re-checks. */
+  bypassCache?: boolean;
 }
 
 function cacheKey(network: string, contractAddress: string): string {
@@ -111,7 +113,9 @@ export async function scanContract(
 
   const network = resolveNetwork(env);
   const key = cacheKey(network, address);
-  const cached = await env.SCAN_CACHE.get(key, "json");
+  const cached = options.bypassCache
+    ? null
+    : await env.SCAN_CACHE.get(key, "json");
 
   if (cached) {
     const cachedResult = cached as ScanResult;

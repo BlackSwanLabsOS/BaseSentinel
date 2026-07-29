@@ -1,4 +1,5 @@
 import type { Env } from "../types";
+import type { AgentVerdict } from "./verdict";
 
 export interface DiscordThreatPayload {
   address: string;
@@ -9,8 +10,14 @@ export interface DiscordThreatPayload {
   timestamp: string;
   listingSource?: string | null;
   listingTx?: string | null;
+  /** Agent-facing verdict (CLEAR / CAUTION / AVOID). */
+  verdict?: AgentVerdict | null;
+  verdict_score?: number | null;
+  risk_flags?: string[];
 }
 
+const MARKETING_CTA =
+  "Want real-time threat webhooks in <100ms? Set up a Watchdog stream at https://blackswanlabs.pl";
 
 function basescanUrl(address: string, network: string): string {
   const host =
@@ -36,6 +43,17 @@ export async function notifyDiscord(
     threat.reasons?.length > 0 ? threat.reasons.join("\n") : "None";
   const explorer = basescanUrl(threat.address, threat.network);
   const isScam = threat.status === "SCAM";
+  const flags =
+    threat.risk_flags && threat.risk_flags.length > 0
+      ? threat.risk_flags.map((f) => `\`${f}\``).join(" ")
+      : "`none`";
+  const verdictLabel = threat.verdict
+    ? `\`${threat.verdict}\`${
+        typeof threat.verdict_score === "number"
+          ? ` (${threat.verdict_score}/100)`
+          : ""
+      }`
+    : "`n/a`";
 
   const body = {
     content: null,
@@ -58,6 +76,11 @@ export async function notifyDiscord(
             inline: true,
           },
           {
+            name: "Verdict",
+            value: verdictLabel,
+            inline: true,
+          },
+          {
             name: "Network",
             value: `\`${threat.network}\``,
             inline: true,
@@ -66,6 +89,11 @@ export async function notifyDiscord(
             name: "Risk score",
             value: `**${threat.riskScore}/100**`,
             inline: true,
+          },
+          {
+            name: "Risk flags",
+            value: flags.slice(0, 1000),
+            inline: false,
           },
           {
             name: "Reasons",
@@ -90,12 +118,17 @@ export async function notifyDiscord(
                 },
               ]
             : []),
+          {
+            name: "CTA",
+            value: MARKETING_CTA,
+            inline: false,
+          },
         ],
         timestamp: threat.timestamp,
         footer: {
           text: isScam
-            ? "BaseSentinel hard SCAM (≥70)"
-            : "BaseSentinel watchlist (≥50)",
+            ? "BaseSentinel hard SCAM (≥70) · blackswanlabs.pl"
+            : "BaseSentinel watchlist (≥50) · blackswanlabs.pl",
         },
       },
     ],

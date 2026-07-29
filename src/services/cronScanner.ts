@@ -6,6 +6,7 @@ import {
 } from "./pairDiscovery";
 import { scanContract } from "./scanner";
 import { notifyCronDigest } from "./discord";
+import { runWatchChecks, type WatchRunStats } from "./watchList";
 
 const CRON_STATE_KEY = "cron:state";
 /** Cap scans/tick to stay within free Alchemy + GoPlus limits. */
@@ -31,6 +32,7 @@ export interface CronRunStats {
   toBlock: number;
   durationMs: number;
   bySource?: Record<string, number>;
+  watch?: WatchRunStats;
 }
 
 export interface CronRunResult {
@@ -142,6 +144,18 @@ export async function runScheduledScan(
       }
     }
 
+    // Watchdog batch (separate budget from discovery scans).
+    try {
+      stats.watch = await runWatchChecks(env, ctx);
+      stats.errors += stats.watch.errors;
+    } catch (error) {
+      stats.errors += 1;
+      console.error(
+        "[cron] watch batch failed:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+
     stats.durationMs = Date.now() - started;
 
     const nextState: CronState = {
@@ -171,7 +185,7 @@ export async function runScheduledScan(
     }
 
     console.log(
-      `[cron] ok discovered=${stats.discovered} scanned=${stats.scanned} scams=${stats.scams} suspicious=${stats.suspicious} errors=${stats.errors} blocks=${stats.fromBlock}-${stats.toBlock} sources=${JSON.stringify(stats.bySource)}`,
+      `[cron] ok discovered=${stats.discovered} scanned=${stats.scanned} scams=${stats.scams} suspicious=${stats.suspicious} errors=${stats.errors} blocks=${stats.fromBlock}-${stats.toBlock} sources=${JSON.stringify(stats.bySource)} watch=${JSON.stringify(stats.watch ?? null)}`,
     );
 
     return { ok: true, stats };

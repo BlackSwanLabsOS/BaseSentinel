@@ -12,9 +12,9 @@ NETWORK = "base"
 binding = "SCAN_CACHE"
 id = "083d1d22fbd0476798f3fdaa6cdad67d"
 
-# Auto-discover + scan newly paired tokens every 2 minutes.
+# Auto-discover + scan newly paired tokens every 1 minute.
 [triggers]
-crons = ["*/2 * * * *"]
+crons = ["* * * * *"]
 
 # Custom domains (Cloudflare zone: blackswanlabs.pl)
 [[routes]]

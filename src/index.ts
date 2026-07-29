@@ -11,6 +11,7 @@ import {
   PaymentBoundToOtherContractError,
   PaymentReplayError,
   PaymentRequiredError,
+  watchBindingKey,
 } from "./middleware/payment";
 import { isAdminAuthorized, requireAdmin } from "./middleware/admin";
 import {
@@ -29,6 +30,14 @@ import { createThreatEventStream } from "./services/threatStream";
 import { getCronState, runScheduledScan } from "./services/cronScanner";
 import { normalizeEthereumAddress } from "./utils/validation";
 import { isMarketingHost, landingResponse } from "./landing";
+import { M2M_DOCS_MARKDOWN } from "./docs/m2mQuickstart";
+import {
+  createWatchSubscription,
+  parseWatchCreateBody,
+  WatchValidationError,
+  webhookFingerprint,
+  WATCH_TTL_SECONDS,
+} from "./services/watchList";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return Response.json(body, {
@@ -68,7 +77,78 @@ function isDiscoveryPath(pathname: string): boolean {
     pathname === "/.well-known/ai-plugin.json" ||
     pathname === "/.well-known/x402.json" ||
     pathname === "/openapi.json" ||
-    pathname === "/stream/threats"
+    pathname === "/stream/threats" ||
+    pathname === "/watch" ||
+    pathname === "/docs"
+  );
+}
+
+async function handleWatchRequest(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  let parsed;
+  try {
+    const body = await request.json();
+    parsed = parseWatchCreateBody(body);
+  } catch (error) {
+    if (error instanceof WatchValidationError) {
+      return withCors(jsonResponse({ error: error.message }, error.status));
+    }
+    if (error instanceof SyntaxError) {
+      return withCors(jsonResponse({ error: "Invalid JSON body" }, 400));
+    }
+    throw error;
+  }
+
+  const fingerprint = await webhookFingerprint(parsed.webhook_url);
+  const bindingKey = watchBindingKey(parsed.target_address, fingerprint);
+
+  if (!isAdminAuthorized(request, env)) {
+    try {
+      await enforcePayment(request, env, {
+        product: "watch",
+        bindingKey,
+        resourceUrl: request.url,
+      });
+    } catch (error) {
+      const paidError = paymentErrorResponse(error, env, request.url);
+      if (paidError) {
+        return paidError;
+      }
+      throw error;
+    }
+  }
+
+  // Seed baseline so the first cron tick does not false-fire.
+  let initialScan = null;
+  try {
+    initialScan = await scanContract(parsed.target_address, env, {
+      bypassCache: true,
+    });
+  } catch (error) {
+    console.error(
+      "[watch] initial scan failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+
+  const watch = await createWatchSubscription(env, parsed, initialScan);
+  return withCors(
+    jsonResponse({
+      ok: true,
+      watch_id: watch.id,
+      target_address: watch.target_address,
+      webhook_url: watch.webhook_url,
+      ttl_seconds: WATCH_TTL_SECONDS,
+      expires_at: watch.expires_at,
+      baseline: {
+        verdict: watch.last_verdict,
+        tax: watch.last_tax,
+        risk_flags: watch.last_risk_flags,
+      },
+      access: isAdminAuthorized(request, env) ? "admin" : "paid",
+    }),
   );
 }
 
@@ -184,6 +264,23 @@ export default {
       return corsPreflightResponse();
     }
 
+    if (url.pathname === "/watch") {
+      if (request.method === "POST") {
+        try {
+          return await handleWatchRequest(request, env);
+        } catch (error) {
+          const paidError = paymentErrorResponse(error, env, request.url);
+          if (paidError) {
+            return paidError;
+          }
+          const message =
+            error instanceof Error ? error.message : "Unknown watch error";
+          return withCors(jsonResponse({ error: message }, 502));
+        }
+      }
+      return jsonResponse({ error: "Method Not Allowed" }, 405);
+    }
+
     if (request.method !== "GET") {
       return jsonResponse({ error: "Method Not Allowed" }, 405);
     }
@@ -198,6 +295,18 @@ export default {
 
     if (url.pathname === "/openapi.json") {
       return withCors(jsonResponse(buildOpenApiDocument(origin, env)));
+    }
+
+    if (url.pathname === "/docs" || url.pathname === "/docs/") {
+      return withCors(
+        new Response(M2M_DOCS_MARKDOWN, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/markdown; charset=utf-8",
+            "Cache-Control": "public, max-age=300",
+          },
+        }),
+      );
     }
 
     if (url.pathname === "/health") {
@@ -275,14 +384,17 @@ export default {
           ai_plugin: `${origin}/.well-known/ai-plugin.json`,
           x402: `${origin}/.well-known/x402.json`,
           openapi: `${origin}/openapi.json`,
+          docs: `${origin}/docs`,
         },
         products: {
           scan: `${origin}/scan/{address}`,
           dossier: `${origin}/dossier/{address}`,
+          watch: `${origin}/watch`,
           daily_feed: `${origin}/api/feed/daily/YYYY-MM-DD`,
           live_stream: `${origin}/stream/threats`,
         },
         health: `${origin}/health`,
+        docs: `${origin}/docs`,
       });
     }
 
@@ -392,7 +504,7 @@ export default {
   },
 
   async scheduled(
-    _event: ScheduledEvent,
+    _controller: ScheduledController,
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {

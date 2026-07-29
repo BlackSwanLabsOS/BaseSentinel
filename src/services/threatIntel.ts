@@ -6,6 +6,7 @@ import {
 import { resolveNetwork } from "../config/network";
 import { notifyDiscordFromEnv } from "./discord";
 import type { ScanDossier } from "./scanTypes";
+import type { AgentVerdict } from "./verdict";
 
 /** Threat records are kept without TTL (durable intel archive). */
 const DAY_INDEX_TTL_SECONDS = 90 * 86_400; // 90 days
@@ -46,6 +47,9 @@ interface ThreatScanInput {
   riskScore: number;
   bytecodeLength: number;
   dossier?: ScanDossier;
+  verdict?: AgentVerdict;
+  verdict_score?: number;
+  risk_flags?: string[];
 }
 
 export interface RecordThreatOptions {
@@ -166,7 +170,7 @@ export async function recordThreat(
     });
   }
 
-  // Discord on first detection or upgrade to SCAM.
+  // Discord on first detection or severity upgrade.
   if (isNew || upgraded) {
     const notifyTask = notifyDiscordFromEnv(env, {
       address: record.address,
@@ -177,6 +181,9 @@ export async function recordThreat(
       timestamp: record.timestamp,
       listingSource: record.dossier?.listing?.source ?? null,
       listingTx: record.dossier?.listing?.txHash ?? null,
+      verdict: scan.verdict ?? null,
+      verdict_score: scan.verdict_score ?? null,
+      risk_flags: scan.risk_flags ?? [],
     });
 
     if (options.waitUntil) {
