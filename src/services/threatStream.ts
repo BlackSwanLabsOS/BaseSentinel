@@ -1,7 +1,7 @@
 import type { Env } from "../types";
 import { listRecentThreats, type RecentThreatEvent } from "./threatIntel";
 
-/** Keep under Worker request lifetime; clients reconnect via `retry:`. */
+/** Short SSE window; clients reconnect via EventSource `retry`. */
 export const SSE_SESSION_MS = 28_000;
 export const SSE_POLL_MS = 2_000;
 export const SSE_RETRY_MS = 5_000;
@@ -45,10 +45,7 @@ function isAfterCursor(event: RecentThreatEvent, cursor: string | null): boolean
 }
 
 /**
- * Short-lived SSE stream that polls the recent-threats KV buffer.
- *
- * Cloudflare Workers cannot push from Cron into an open HTTP connection, so we
- * poll KV and close after ~28s with retry:5000 so sniper bots reconnect.
+ * Short-lived SSE stream of recent threats (polls KV, then closes with retry).
  */
 export function createThreatEventStream(
   env: Env,
@@ -80,7 +77,7 @@ export function createThreatEventStream(
 
         while (Date.now() - startedAt < SSE_SESSION_MS) {
           const recent = await listRecentThreats(env);
-          // Emit oldest-of-new first so clients see chronological order within the batch.
+          // Chronological order within each batch.
           const fresh = recent
             .filter((event) => isAfterCursor(event, lastId))
             .sort((a, b) => (a.id < b.id ? -1 : 1));
@@ -106,7 +103,7 @@ export function createThreatEventStream(
             lastId = event.id;
           }
 
-          // Keepalive comment (ignored by EventSource data handlers).
+          // SSE keepalive comment.
           send(`: ping ${new Date().toISOString()}\n\n`);
 
           const remaining = SSE_SESSION_MS - (Date.now() - startedAt);
@@ -136,7 +133,7 @@ export function createThreatEventStream(
             }),
           );
         } catch {
-          // stream may already be closed
+          // Client may have already disconnected.
         }
       } finally {
         controller.close();

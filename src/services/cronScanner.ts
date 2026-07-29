@@ -9,7 +9,7 @@ import { notifyCronDigest } from "./discord";
 import { runWatchChecks, type WatchRunStats } from "./watchList";
 
 const CRON_STATE_KEY = "cron:state";
-/** Cap scans/tick to stay within free Alchemy + GoPlus limits. */
+/** Max full contract scans per cron tick. */
 const MAX_SCANS_PER_RUN = 10;
 
 export interface CronState {
@@ -77,9 +77,7 @@ async function saveCronState(env: Env, state: CronState): Promise<void> {
 }
 
 /**
- * Background job: discover newly paired tokens and scan them.
- * Payment gate is bypassed (internal cron → scanContract directly).
- * SCAM hits are persisted via scanner → threatIntel (+ Discord via waitUntil).
+ * Cron: discover new Base listings and scan them into the threat archive.
  */
 export async function runScheduledScan(
   env: Env,
@@ -107,7 +105,7 @@ export async function runScheduledScan(
     stats.discovered = discovery.tokens.length;
     stats.bySource = discovery.bySource;
 
-    // Prefer newest listings first (sniper-relevant).
+    // Newest listings first.
     const candidates = [...discovery.tokens].sort(
       (a, b) => b.blockNumber - a.blockNumber,
     );
@@ -144,7 +142,7 @@ export async function runScheduledScan(
       }
     }
 
-    // Watchdog batch (separate budget from discovery scans).
+    // Paid watch subscriptions (separate scan budget).
     try {
       stats.watch = await runWatchChecks(env, ctx);
       stats.errors += stats.watch.errors;

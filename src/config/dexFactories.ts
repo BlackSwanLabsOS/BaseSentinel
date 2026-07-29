@@ -134,7 +134,7 @@ export function getDexFactories(network: NetworkId): DexFactorySource[] {
   return network === "base" ? BASE_FACTORIES : SEPOLIA_FACTORIES;
 }
 
-/** @deprecated Prefer getDexFactories — kept for older imports. */
+/** Legacy UniV2 factory address helper — prefer getDexFactories(). */
 export const UNISWAP_V2_FACTORY_BY_NETWORK: Record<NetworkId, string> = {
   "base-sepolia": SEPOLIA_FACTORIES[0].address,
   base: BASE_FACTORIES[0].address,

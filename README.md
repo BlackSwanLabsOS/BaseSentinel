@@ -102,16 +102,16 @@ On verdict / tax / risk_flag changes, BaseSentinel POSTs JSON `STATUS_CHANGED` t
 
 ---
 
-## Discovery / directories
+## Where to find us
 
-- Ontario Protocol (listed)
-- Virtuals ACP agent: BaseSentinel
-- x402-list (submitted)
-- Coinbase Bazaar: schema validated; full index needs CDP facilitator settle (not used on MVP)
+- Ontario Protocol
+- Virtuals ACP — BaseSentinel
+- x402-list
+- OpenAPI / x402 catalogs on the API host above
 
 ---
 
-## Operator
+## Contact
 
 BlackSwan Labs — https://blackswanlabs.pl  
-Contact: blackswanlabsos@gmail.com
+blackswanlabsos@gmail.com

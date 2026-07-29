@@ -1,18 +1,12 @@
 export interface Env {
   SCAN_CACHE: KVNamespace;
   ALCHEMY_API_KEY: string;
-  /** Wallet address that should receive M2M scan payments (USDC). */
+  /** Treasury wallet receiving USDC payments. */
   PAYMENT_ADDRESS: string;
-  /** Shared secret for admin threat-intel endpoints (X-Admin-Key). */
+  /** Admin key for diagnostics endpoints (X-Admin-Key). */
   ADMIN_API_KEY: string;
-  /**
-   * Active chain: "base-sepolia" or "base".
-   * Controls Alchemy RPC + USDC contract used for payment verification.
-   */
+  /** Chain: `base` (production) or `base-sepolia` (local tests). */
   NETWORK: string;
-  /**
-   * Discord Incoming Webhook URL for SCAM alerts.
-   * Optional — when unset, notifications are skipped.
-   */
+  /** Optional Discord webhook for threat alerts. */
   DISCORD_WEBHOOK_URL?: string;
 }

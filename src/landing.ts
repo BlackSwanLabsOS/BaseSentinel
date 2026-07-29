@@ -1,4 +1,4 @@
-/** Marketing site for apex / www — API stays on api.blackswanlabs.pl */
+/** Landing page for apex / www. API: api.blackswanlabs.pl */
 
 import {
   PUBLIC_INTEL_SHORT,

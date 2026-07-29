@@ -8,7 +8,7 @@ import { notifyDiscordFromEnv } from "./discord";
 import type { ScanDossier } from "./scanTypes";
 import type { AgentVerdict } from "./verdict";
 
-/** Threat records are kept without TTL (durable intel archive). */
+/** Threat records persist without TTL. */
 const DAY_INDEX_TTL_SECONDS = 90 * 86_400; // 90 days
 
 export interface ThreatRecord {
@@ -53,7 +53,7 @@ interface ThreatScanInput {
 }
 
 export interface RecordThreatOptions {
-  /** Prefer ctx.waitUntil in Cron so Discord I/O doesn't block the batch. */
+  /** Optional waitUntil so Discord I/O does not block the cron batch. */
   waitUntil?: (promise: Promise<unknown>) => void;
 }
 
@@ -81,8 +81,8 @@ function severityRank(status: AnalysisStatus): number {
 }
 
 /**
- * Persists SUSPICIOUS / SCAM into the threat-intel archive + daily index.
- * SAFE is ignored. First-seen and severity upgrades fan out to SSE + Discord.
+ * Persist SUSPICIOUS / SCAM into the archive and daily index.
+ * First-seen and severity upgrades notify Discord and the live stream.
  */
 export async function recordThreat(
   env: Env,
@@ -102,7 +102,7 @@ export async function recordThreat(
 
   const nextScore = Math.max(existing?.riskScore ?? 0, scan.riskScore);
   const nextStatus = statusFromScore(nextScore);
-  // Prefer explicit higher severity if scores tie oddly.
+  // Prefer higher severity when scores are close.
   const mergedStatus =
     severityRank(scan.status) > severityRank(nextStatus)
       ? scan.status
@@ -170,7 +170,7 @@ export async function recordThreat(
     });
   }
 
-  // Discord on first detection or severity upgrade.
+  // Notify on first detection or severity upgrade.
   if (isNew || upgraded) {
     const notifyTask = notifyDiscordFromEnv(env, {
       address: record.address,
@@ -224,7 +224,7 @@ async function pushRecentThreat(
   );
 }
 
-/** Newest-first recent threat events for live SSE polling. */
+/** Newest-first buffer for the live threat stream. */
 export async function listRecentThreats(
   env: Env,
 ): Promise<RecentThreatEvent[]> {
@@ -253,9 +253,7 @@ async function appendToDayIndex(
   });
 }
 
-/**
- * Builds an exportable daily threat package (SCAM + SUSPICIOUS).
- */
+/** Build the paid daily threat package (SCAM + SUSPICIOUS). */
 export async function buildDailyThreatFeed(
   env: Env,
   date: string,
@@ -281,7 +279,7 @@ export async function buildDailyThreatFeed(
     )) as ThreatRecord | null;
 
     if (record) {
-      // Backfill status for older KV records written before SUSPICIOUS existed.
+      // Older records may omit status.
       const status = record.status ?? statusFromScore(record.riskScore);
       threats.push({ ...record, status });
     }

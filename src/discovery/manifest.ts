@@ -450,7 +450,7 @@ export function buildX402WellKnown(origin: string, env: Env) {
     network: caip2,
     payTo: env.PAYMENT_ADDRESS,
     asset: usdc,
-    /** Declares BaseSentinel MVP settlement (not EIP-3009 / CDP facilitator). */
+    /** Settlement: USDC transfer on Base + X-Payment-Proof tx hash. */
     settlement: "tx_hash_proof",
     proofHeader: "X-Payment-Proof",
     generated_at: now,
@@ -465,7 +465,7 @@ export function buildX402WellKnown(origin: string, env: Env) {
       "base",
       "security",
       "threat-intel",
-      "sniper-alpha",
+      "risk-scoring",
       "honeypot",
       "scam-detection",
     ],
@@ -481,7 +481,7 @@ export function buildX402WellKnown(origin: string, env: Env) {
           "base",
           "security",
           "threat-intel",
-          "sniper-alpha",
+          "risk-scoring",
           "honeypot",
           "scam-detection",
         ],

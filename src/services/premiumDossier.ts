@@ -16,9 +16,7 @@ export interface DossierResult {
   security: ScanResult;
 }
 
-/**
- * Premium dossier: security scan + market structure (holders / LP heuristics).
- */
+/** Premium dossier: security scan + market structure. */
 export async function buildPremiumDossier(
   contractAddress: string,
   env: Env,
@@ -26,7 +24,7 @@ export async function buildPremiumDossier(
   const security = await scanContract(contractAddress, env);
   const market_structure = await analyzeMarketStructure(env, security);
 
-  // Recompute verdict with concentration flags so agents see DEPLOYER_HOLDS_SUPPLY etc.
+  // Recompute verdict with concentration flags included.
   const enriched = buildVerdict({
     status: security.status,
     riskScore: security.riskScore,

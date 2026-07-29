@@ -13,9 +13,9 @@ export const PAYMENT_DECIMALS = 6;
 export const PAYMENT_PROOF_TTL_SECONDS = 86_400; // 24 hours
 export const PAYMENT_MAX_TIMEOUT_SECONDS = 300;
 
-/** @deprecated Prefer getUsdcContractAddress(resolveNetwork(env)) */
+/** Legacy export — prefer getUsdcContractAddress(resolveNetwork(env)). */
 export const USDC_CONTRACT_ADDRESS = getUsdcContractAddress("base-sepolia");
-/** @deprecated Prefer resolveNetwork(env) */
+/** Legacy export — prefer resolveNetwork(env). */
 export const PAYMENT_NETWORK: NetworkId = "base-sepolia";
 
 export type PaymentProductId =
@@ -84,11 +84,11 @@ export const PAYMENT_PRODUCTS: Record<PaymentProductId, PaymentProduct> = {
   },
 };
 
-/** @deprecated Prefer PAYMENT_PRODUCTS.scan — kept for discovery defaults. */
+/** Legacy alias of PAYMENT_PRODUCTS.scan.amountDisplay. */
 export const PAYMENT_AMOUNT = PAYMENT_PRODUCTS.scan.amountDisplay;
-/** @deprecated Prefer PAYMENT_PRODUCTS.scan.amountAtomic */
+/** Legacy alias of PAYMENT_PRODUCTS.scan.amountAtomic. */
 export const PAYMENT_AMOUNT_ATOMIC = PAYMENT_PRODUCTS.scan.amountAtomic;
-/** @deprecated Prefer PAYMENT_PRODUCTS.scan.minAmount */
+/** Legacy alias of PAYMENT_PRODUCTS.scan.minAmount. */
 export const REQUIRED_USDC_AMOUNT = PAYMENT_PRODUCTS.scan.minAmount;
 
 /** keccak256("Transfer(address,address,uint256)") */
@@ -107,7 +107,7 @@ interface ConsumedPaymentRecord {
   product: PaymentProductId;
   /** Contract address or feed binding key (e.g. daily-feed:2026-07-28). */
   bindingKey: string;
-  /** @deprecated legacy field from older scan-only records */
+  /** Older records may store the binding here. */
   contractAddress?: string;
   usedAt: string;
   status: "consumed";
@@ -134,10 +134,7 @@ export interface EnforcePaymentOptions {
   bindingKey: string;
   resourceUrl?: string;
   resourceDescription?: string;
-  /**
-   * When true, an already-consumed proof for the same product+binding is allowed.
-   * Needed for SSE reconnects within the paid window.
-   */
+  /** Allow the same proof again for this product+binding (e.g. SSE reconnect). */
   allowReuse?: boolean;
 }
 
@@ -170,7 +167,7 @@ export class PaymentBindingMismatchError extends Error {
   }
 }
 
-/** @deprecated Use PaymentBindingMismatchError */
+/** Alias of PaymentBindingMismatchError. */
 export class PaymentBoundToOtherContractError extends PaymentBindingMismatchError {
   constructor(
     message = "Payment proof already used for a different contract",
@@ -193,7 +190,7 @@ function paymentProofCacheKey(
   product: PaymentProductId,
   paymentProof: string,
 ): string {
-  // Namespace by product so a scan payment cannot unlock the daily feed.
+  // Product-scoped keys: a scan proof cannot unlock another product.
   return `tx:${product}:${paymentProof.toLowerCase()}`;
 }
 
@@ -633,7 +630,7 @@ export async function enforcePayment(
   const record: ConsumedPaymentRecord = {
     product: product.id,
     bindingKey,
-    // Keep legacy field for scan so older readers still understand the record.
+    // Include contractAddress for older clients reading scan proofs.
     contractAddress: product.id === "scan" ? bindingKey : undefined,
     usedAt: new Date().toISOString(),
     status: "consumed",
@@ -665,5 +662,4 @@ function utcDateForBinding(date = new Date()): string {
   return date.toISOString().slice(0, 10);
 }
 
-// Re-export helpers used by discovery / callers
 export { getAlchemyRpcBase, getUsdcContractAddress, resolveNetwork };

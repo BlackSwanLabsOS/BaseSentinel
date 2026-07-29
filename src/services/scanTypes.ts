@@ -17,7 +17,7 @@ export interface ScanDossier {
   honeypotIs: Omit<HoneypotIsFlags, "rawAvailable"> | null;
   /** Present when scan came from cron discovery (null for ad-hoc paid scans). */
   listing: ListingContext | null;
-  /** Reserved for future latency hints. */
+  /** Optional latency metadata. */
   ageHintSeconds: number | null;
   /** True when GoPlus + honeypot.is both flagged honeypot/can't-sell. */
   dualSourceConsensus: boolean;

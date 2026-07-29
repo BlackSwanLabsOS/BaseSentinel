@@ -131,9 +131,7 @@ function inferLpStatus(lpHolders: GoPlusHolderRow[] | null): LpStatus {
 }
 
 /**
- * Market structure for premium dossier.
- * Uses GoPlus holder tables (reliable on Free) + Alchemy eth_call for deployer %.
- * Alchemy has no native "top holders" indexer — we do not fake it via eth_getLogs.
+ * Market structure for the premium dossier (holders / deployer share / LP hints).
  */
 export async function analyzeMarketStructure(
   env: Env,
@@ -149,7 +147,7 @@ export async function analyzeMarketStructure(
   let deployer_balance_pct: number | null =
     goplus?.creatorPercent ?? goplus?.ownerPercent ?? null;
 
-  // Prefer live balanceOf(deployer)/totalSupply when we know deployer.
+  // Prefer live balanceOf(deployer) / totalSupply when deployer is known.
   if (deployer) {
     try {
       const [supply, bal] = await Promise.all([
@@ -186,7 +184,7 @@ export async function analyzeMarketStructure(
     notes.push(`lp_status inferred from GoPlus lp_holders (${lp_status})`);
   }
 
-  // Soft hint: if honeypot reported a pair but we still don't know LP status.
+  // Soft hint when a pair is known but LP lock status is not.
   if (lp_status === "UNKNOWN" && honeypotIs?.pairAddress) {
     notes.push(`pair observed via honeypot.is: ${honeypotIs.pairAddress}`);
   }
@@ -195,7 +193,6 @@ export async function analyzeMarketStructure(
     (typeof top_5_holders_pct === "number" && top_5_holders_pct >= 50) ||
     (typeof deployer_balance_pct === "number" && deployer_balance_pct >= 10);
 
-  // Silence unused network for now (kept for future chain-specific routers).
   void resolveNetwork(env);
 
   return {

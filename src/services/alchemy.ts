@@ -34,7 +34,7 @@ const PUBLIC_RPC_BY_NETWORK = {
   "base-sepolia": "https://sepolia.base.org",
 } as const;
 
-/** Alchemy Free tier hard-caps eth_getLogs at 10 blocks per request. */
+/** eth_getLogs chunk size (Alchemy-safe range). */
 const GET_LOGS_CHUNK_BLOCKS = 10;
 
 function trimKey(key: string): string {

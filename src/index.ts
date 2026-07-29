@@ -120,7 +120,7 @@ async function handleWatchRequest(
     }
   }
 
-  // Seed baseline so the first cron tick does not false-fire.
+  // Seed watch baseline on create (no false STATUS_CHANGED on first tick).
   let initialScan = null;
   try {
     initialScan = await scanContract(parsed.target_address, env, {
@@ -216,7 +216,7 @@ async function handleDailyFeedRequest(
     );
   }
 
-  // Creators / diagnostics: free with admin key.
+  // Optional admin key unlocks creator/diagnostics access.
   if (!isAdminAuthorized(request, env)) {
     try {
       await enforcePayment(request, env, {
@@ -252,7 +252,7 @@ export default {
     const url = new URL(request.url);
     const origin = url.origin;
 
-    // Apex / www = product site; api.* = JSON API.
+    // Apex / www → landing page; api.* → JSON API.
     if (
       isMarketingHost(url.hostname) &&
       (url.pathname === "/" || url.pathname === "")
@@ -339,8 +339,7 @@ export default {
       return jsonResponse(await getCronState(env));
     }
 
-    // Public commercial feed (402) + optional admin bypass.
-    // Path form preferred for directories: /api/feed/daily/YYYY-MM-DD
+    // Paid daily feed (HTTP 402). Preferred path: /api/feed/daily/YYYY-MM-DD
     const dailyFeedPath = url.pathname.match(
       /^\/api\/feed\/daily\/(\d{4}-\d{2}-\d{2})$/,
     );
@@ -351,12 +350,12 @@ export default {
       return handleDailyFeedRequest(request, env, url);
     }
 
-    // Live SCAM alerts for sniper bots (short SSE sessions + auto-retry).
+    // Live threat stream (SSE; short sessions with client reconnect).
     if (url.pathname === "/stream/threats") {
       return handleThreatStreamRequest(request, env);
     }
 
-    // Legacy admin-only feed (diagnostics).
+    // Admin-only daily feed (diagnostics).
     if (url.pathname === "/api/admin/daily-feed") {
       const authError = requireAdmin(request, env);
       if (authError) {

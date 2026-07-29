@@ -1,7 +1,6 @@
 /**
- * Deterministic agent verdict layer.
- * Maps internal riskScore (0=clean … 100=deadly) to Gemini-style
- * verdict_score (100=clean … 0=deadly) + CLEAR/CAUTION/AVOID.
+ * Agent verdict layer: CLEAR / CAUTION / AVOID.
+ * `verdict_score`: 100 = clean, 0 = high risk.
  */
 
 export type AgentVerdict = "CLEAR" | "CAUTION" | "AVOID";
@@ -41,7 +40,7 @@ export interface VerdictInput {
 
 export interface VerdictResult {
   verdict: AgentVerdict;
-  /** 100 = clean, 0 = deadly (inverted from internal riskScore). */
+  /** 100 = clean, 0 = high risk. */
   verdict_score: number;
   risk_flags: string[];
 }
@@ -64,9 +63,7 @@ export function maxTax(
   return Math.max(...taxes);
 }
 
-/**
- * Stable machine codes for agent branching (no free-text).
- */
+/** Machine-readable risk flag codes for agent branching. */
 export function collectRiskFlags(input: VerdictInput): string[] {
   const flags = new Set<string>();
   const { goplus, honeypotIs, reasons } = input;
@@ -140,14 +137,12 @@ function verdictFromScore(score: number): AgentVerdict {
   return "CLEAR";
 }
 
-/**
- * Build agent-facing verdict. Prefer inverted riskScore, then tighten with hard rules.
- */
+/** Build CLEAR / CAUTION / AVOID from scan signals. */
 export function buildVerdict(input: VerdictInput): VerdictResult {
   const risk_flags = collectRiskFlags(input);
   let verdict_score = clamp(100 - Math.round(input.riskScore), 0, 100);
 
-  // Hard AVOID rules (Gemini spec) — force score into AVOID band.
+  // Hard AVOID: force score into the AVOID band.
   const tax = maxTax(input.goplus, input.honeypotIs);
   const hardAvoid =
     risk_flags.includes("HONEYPOT") ||
@@ -170,13 +165,13 @@ export function buildVerdict(input: VerdictInput): VerdictResult {
     risk_flags.includes("HIGH_HOLDER_CONCENTRATION") ||
     input.status === "SUSPICIOUS"
   ) {
-    // Keep CLEAR only if already high; otherwise floor into CAUTION.
+    // SAFE + caution flags → CAUTION unless score stays high.
     if (verdict_score >= 80) {
       verdict_score = Math.min(verdict_score, 79);
     }
   }
 
-  // Soft CLEAR nudge when status is SAFE and no caution flags.
+  // SAFE with no caution flags → nudge toward CLEAR.
   if (
     input.status === "SAFE" &&
     !hardAvoid &&

@@ -25,7 +25,7 @@ export const WETH_BY_NETWORK: Record<NetworkId, string> = {
   base: "0x4200000000000000000000000000000000000006",
 };
 
-/** Virtuals Protocol $VIRTUAL (Base mainnet). Sepolia: unused placeholder. */
+/** Virtuals Protocol $VIRTUAL (Base mainnet). */
 export const VIRTUAL_BY_NETWORK: Record<NetworkId, string> = {
   "base-sepolia": "0x0000000000000000000000000000000000000000",
   base: "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b",

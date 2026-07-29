@@ -1,7 +1,4 @@
-/**
- * Public M2M quickstart (served at GET /docs).
- * Keep in sync with repo root README.md payment sections.
- */
+/** Public M2M quickstart served at GET /docs. */
 export const M2M_DOCS_MARKDOWN = `# BaseSentinel — M2M quickstart
 
 Pay-per-call threat intel on **Base** (\`eip155:8453\`). No API keys.

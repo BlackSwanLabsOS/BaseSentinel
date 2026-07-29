@@ -27,10 +27,7 @@ function basescanUrl(address: string, network: string): string {
   return `${host}/address/${address}`;
 }
 
-/**
- * Sends a SCAM / SUSPICIOUS alert embed to Discord.
- * No-ops when DISCORD_WEBHOOK_URL is missing. Never throws to callers.
- */
+/** Discord alert for SCAM / SUSPICIOUS. No-op if webhook unset. */
 export async function notifyDiscord(
   webhookUrl: string | undefined,
   threat: DiscordThreatPayload,
@@ -173,10 +170,7 @@ export interface CronDigestPayload {
   bySource?: Record<string, number>;
 }
 
-/**
- * Lightweight cron activity ping so Discord isn't silent when the pipeline runs.
- * Skips empty ticks (nothing found / flagged) to avoid spam every 5 minutes.
- */
+/** Cron digest: only sent when the tick found or flagged something. */
 export async function notifyCronDigest(
   webhookUrl: string | undefined,
   digest: CronDigestPayload,

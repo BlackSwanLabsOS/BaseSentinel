@@ -1,9 +1,6 @@
 import type { Env } from "../types";
 
-/**
- * Constant-time-ish string compare for admin API keys.
- * (Best-effort in JS; still vastly better than early-return on first mismatch.)
- */
+/** Timing-safe-ish compare for admin API keys. */
 export function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) {
     return false;
@@ -31,7 +28,7 @@ export function requireAdmin(request: Request, env: Env): Response | null {
   return null;
 }
 
-/** Soft check — used when admin key is an optional free bypass. */
+/** Returns true when a valid admin key is present. */
 export function isAdminAuthorized(request: Request, env: Env): boolean {
   if (!env.ADMIN_API_KEY) {
     return false;

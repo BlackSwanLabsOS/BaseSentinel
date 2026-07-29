@@ -5,7 +5,7 @@ import { maxTax, type AgentVerdict } from "./verdict";
 
 export const WATCH_KEY_PREFIX = "watch:";
 export const WATCH_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
-/** Cap watchdog rescans per cron tick (separate from discovery budget). */
+/** Max watch re-scans per cron tick. */
 export const MAX_WATCH_SCANS_PER_RUN = 5;
 const WATCH_CURSOR_KEY = "watch:cursor";
 const WEBHOOK_TIMEOUT_MS = 8_000;
@@ -114,10 +114,7 @@ function isBlockedHostname(hostname: string): boolean {
   return isPrivateIpv4(host);
 }
 
-/**
- * SSRF-hardening for client webhook URLs.
- * HTTPS only; no credentials; no private/loopback/link-local hosts.
- */
+/** Validate webhook URL: HTTPS only, no private/loopback hosts. */
 export function assertSafeWebhookUrl(raw: unknown): string {
   if (typeof raw !== "string" || !raw.trim()) {
     throw new WatchValidationError("webhook_url is required");
@@ -272,9 +269,8 @@ async function listWatchKeys(env: Env): Promise<string[]> {
       limit: 1000,
     });
     for (const key of page.keys) {
-      // Skip internal cursor marker if ever stored under prefix (we use watch:cursor without extra).
       if (key.name === WATCH_CURSOR_KEY) continue;
-      // Only subscription records: watch:{uuid}
+      // Subscription records: watch:{uuid}
       if (!/^watch:[0-9a-f-]{36}$/i.test(key.name)) continue;
       keys.push(key.name);
     }
@@ -333,21 +329,21 @@ async function remainingTtlSeconds(
   key: string,
   fallbackExpiresAt: string,
 ): Promise<number> {
-  // Workers KV get with metadata isn't always available; derive from expires_at.
+  // TTL derived from expires_at.
   const ms = Date.parse(fallbackExpiresAt) - Date.now();
   const seconds = Math.floor(ms / 1000);
   if (Number.isFinite(seconds) && seconds > 60) {
     return Math.min(seconds, WATCH_TTL_SECONDS);
   }
-  // If clock skew / missing expiry, keep a short lease so we don't immortalize.
+  // Missing expiry → short lease so records do not persist forever.
   void env;
   void key;
   return 3600;
 }
 
 /**
- * Round-robin re-check of active watches. Fresh scans (bypass cache).
- * Notifies webhook only when verdict, tax, or risk_flags change.
+ * Re-check active watches each cron tick.
+ * Webhook fires only when verdict, tax, or risk_flags change.
  */
 export async function runWatchChecks(
   env: Env,
@@ -400,7 +396,7 @@ export async function runWatchChecks(
           !taxEqual(previous.tax, snap.tax) ||
           !flagsEqual(previous.risk_flags, snap.risk_flags));
 
-      // First successful check only seeds baseline — no webhook spam.
+      // First check seeds baseline only (no webhook).
       let notifiedAt = record.last_notified_at;
       if (changed) {
         const payload: WatchStatusChangedEvent = {

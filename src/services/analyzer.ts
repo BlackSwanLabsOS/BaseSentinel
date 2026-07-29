@@ -29,7 +29,7 @@ const MIN_BYTECODE_HEX_LENGTH = 10;
 
 /** Sell/buy tax (%) above this is treated as a serious risk signal. */
 const HIGH_TAX_PERCENT = 10;
-/** Extreme tax (%) — effectively unsellable for snipers. */
+/** Extreme tax (%) — effectively unsellable. */
 const EXTREME_TAX_PERCENT = 49;
 
 /**
@@ -322,7 +322,7 @@ export function mergeHoneypotIsEnrichment(
   let riskScore = local.riskScore;
 
   if (honeypot.isHoneypot === true) {
-    // Soften obvious false positives: honeypot flag but 0 sell tax + many holders.
+    // Soften likely false positives (flag set, 0 sell tax, many holders).
     const likelyFalsePositive =
       honeypot.sellTax === 0 &&
       honeypot.buyTax === 0 &&
@@ -379,9 +379,7 @@ export function mergeHoneypotIsEnrichment(
   return finalize(reasons, riskScore);
 }
 
-/**
- * Dual-source consensus: GoPlus + honeypot.is both screaming honeypot → hard 100.
- */
+/** Dual-source consensus: GoPlus + honeypot.is both flag honeypot → max risk. */
 export function applyExternalHoneypotConsensus(
   analysis: AnalysisResult,
   goplus: GoPlusTokenFlags | null,

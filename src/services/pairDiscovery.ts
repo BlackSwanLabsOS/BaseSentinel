@@ -12,11 +12,7 @@ import {
 import { getLatestBlockNumber, getLogs, type EthLog } from "./alchemy";
 import { normalizeEthereumAddress } from "../utils/validation";
 
-/**
- * Max blocks per cron tick.
- * Base ~2s/block → ~150 blocks / 5 min. 300 covers a delayed tick without gaps.
- * eth_getLogs stays chunked (Alchemy-safe).
- */
+/** Max block span covered per cron tick (catch-up after delays). */
 export const MAX_BLOCK_SPAN = 300;
 
 /** On first run, only look back this many blocks. */
@@ -154,7 +150,7 @@ export async function discoverRecentTokens(
     };
   }
 
-  // Cap span so a long outage doesn't explode RPC usage.
+  // Cap span after downtime to limit RPC usage.
   if (latest - fromBlock > MAX_BLOCK_SPAN) {
     fromBlock = latest - MAX_BLOCK_SPAN;
   }
@@ -172,7 +168,7 @@ export async function discoverRecentTokens(
   const byAddress = new Map<string, DiscoveredToken>();
   const bySource: Record<string, number> = {};
 
-  // Parallel per factory — one bad source must not kill the whole cron tick.
+  // Parallel per factory — one failing source must not stop the tick.
   const logSets = await Promise.all(
     factories.map(async (factory) => {
       try {

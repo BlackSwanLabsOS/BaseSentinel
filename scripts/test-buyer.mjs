@@ -1,10 +1,8 @@
 /**
- * Simulates an M2M buyer bot against /api/feed/daily.
+ * Local buyer smoke test for GET /api/feed/daily.
  *
- * IMPORTANT:
- * - Payment TX must be on the SAME chain as Worker NETWORK (wrangler.toml).
- * - Currently production is NETWORK=base → need Base mainnet USDC (0.01) to PAYMENT_ADDRESS.
- * - For cheap faucet tests, temporarily set NETWORK=base-sepolia and pay on Sepolia.
+ * Payment tx must be on the same chain as Worker NETWORK (production: Base).
+ * Amount: 0.01 USDC to PAYMENT_ADDRESS.
  *
  * Usage (PowerShell):
  *   $env:BASE_URL="http://127.0.0.1:8787"
@@ -12,8 +10,8 @@
  *   $env:PAYMENT_PROOF="0xYourTxHash..."
  *   npm run test:buyer
  *
- * Optional admin-only (no payment):
- *   $env:ADMIN_API_KEY="twoj-sekret"
+ * Optional admin access (no payment):
+ *   $env:ADMIN_API_KEY="your-admin-key"
  *   npm run test:buyer
  */
 
