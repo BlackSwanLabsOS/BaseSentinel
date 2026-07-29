@@ -3,12 +3,30 @@ import {
   getUsdcContractAddress,
   resolveNetwork,
 } from "../config/network";
+import { ErrorCode } from "../errors";
 import { PAYMENT_PRODUCTS } from "../middleware/payment";
 import {
   PUBLIC_INTEL_CAPABILITIES,
   PUBLIC_INTEL_SHORT,
   PUBLIC_INTEL_SUMMARY,
 } from "./publicIntel";
+
+const API_ERROR_SCHEMA = {
+  type: "object",
+  required: ["error_code", "message", "error"],
+  properties: {
+    error_code: {
+      type: "string",
+      enum: Object.values(ErrorCode),
+      description: "Stable machine code — branch on this, not on message text",
+    },
+    message: { type: "string" },
+    error: {
+      type: "string",
+      description: "Alias of message (backward compatible)",
+    },
+  },
+} as const;
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -231,7 +249,7 @@ export function buildOpenApiDocument(origin: string, env: Env) {
               },
             },
             "402": {
-              description: "Payment required before scanning",
+              description: "PAYMENT_REQUIRED — pay USDC then retry with X-Payment-Proof",
               headers: {
                 "X-Payment-Address": {
                   schema: { type: "string" },
@@ -246,10 +264,66 @@ export function buildOpenApiDocument(origin: string, env: Env) {
                   description: network,
                 },
               },
+              content: {
+                "application/json": {
+                  schema: {
+                    allOf: [
+                      { $ref: "#/components/schemas/ApiError" },
+                      {
+                        type: "object",
+                        properties: {
+                          payment_info: { type: "object" },
+                          x402: { type: "object" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
             },
             "400": {
               description:
-                "Invalid address / invalid, reused, or rebound payment proof",
+                "INVALID_ADDRESS_FORMAT or INVALID_PROOF_FORMAT",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ApiError" },
+                },
+              },
+            },
+            "409": {
+              description: "TX_HASH_CONSUMED or TX_HASH_BOUND_OTHER",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ApiError" },
+                },
+              },
+            },
+            "422": {
+              description: "INSUFFICIENT_USDC or PAYMENT_INVALID",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ApiError" },
+                },
+              },
+            },
+            "502": {
+              description: "UPSTREAM_TIMEOUT",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ApiError" },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/tools.json": {
+        get: {
+          operationId: "listAgentTools",
+          summary: "OpenAI-compatible tool schemas for LLM agents",
+          responses: {
+            "200": {
+              description: "Tool definitions + payment notes",
             },
           },
         },
@@ -431,6 +505,149 @@ export function buildOpenApiDocument(origin: string, env: Env) {
         },
       },
     },
+    components: {
+      schemas: {
+        ApiError: API_ERROR_SCHEMA,
+      },
+    },
+  };
+}
+
+/**
+ * OpenAI / LangChain-style tool schemas for agent integrators (copy-paste).
+ */
+export function buildToolsDocument(origin: string, env: Env) {
+  const network = resolveNetwork(env);
+  const usdc = getUsdcContractAddress(network);
+
+  return {
+    schema_version: "1.0",
+    name: "BaseSentinel",
+    description:
+      "Pay-per-call Base threat intel. Transfer USDC on Base, then call with X-Payment-Proof: <tx_hash>.",
+    api_base: origin,
+    payment: {
+      network,
+      caip2: network === "base" ? "eip155:8453" : "eip155:84532",
+      asset: "USDC",
+      usdc_contract: usdc,
+      pay_to: env.PAYMENT_ADDRESS,
+      proof_header: "X-Payment-Proof",
+      settlement: "tx_hash_proof",
+      error_contract:
+        "Errors return { error_code, message, error }. Branch on error_code.",
+      error_codes: Object.values(ErrorCode),
+    },
+    docs: `${origin}/docs`,
+    openapi: `${origin}/openapi.json`,
+    tools: [
+      {
+        type: "function",
+        function: {
+          name: "basesentinel_scan",
+          description: `Scan a Base contract for honeypot/scam risk. Cost ${PAYMENT_PRODUCTS.scan.amountDisplay}. Returns verdict CLEAR|CAUTION|AVOID and verdict_score 0-100 (100=clean).`,
+          parameters: {
+            type: "object",
+            additionalProperties: false,
+            required: ["address", "payment_proof"],
+            properties: {
+              address: {
+                type: "string",
+                description: "EVM contract address 0x + 40 hex",
+                pattern: "^0x[a-fA-F0-9]{40}$",
+              },
+              payment_proof: {
+                type: "string",
+                description:
+                  "Base USDC transfer tx hash to treasury (X-Payment-Proof)",
+                pattern: "^0x[a-fA-F0-9]{64}$",
+              },
+            },
+          },
+          x_basesentinel: {
+            method: "GET",
+            url_template: `${origin}/scan/{address}`,
+            price: PAYMENT_PRODUCTS.scan.amountDisplay,
+            amount_atomic: PAYMENT_PRODUCTS.scan.amountAtomic,
+            response: {
+              verdict: { type: "string", enum: ["CLEAR", "CAUTION", "AVOID"] },
+              verdict_score: {
+                type: "integer",
+                minimum: 0,
+                maximum: 100,
+                description: "100=clean, 0=high risk",
+              },
+              status: {
+                type: "string",
+                enum: ["SAFE", "SUSPICIOUS", "SCAM"],
+              },
+              risk_flags: { type: "array", items: { type: "string" } },
+            },
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "basesentinel_dossier",
+          description: `Premium dossier: scan + holder/LP structure. Cost ${PAYMENT_PRODUCTS.dossier.amountDisplay}.`,
+          parameters: {
+            type: "object",
+            additionalProperties: false,
+            required: ["address", "payment_proof"],
+            properties: {
+              address: {
+                type: "string",
+                pattern: "^0x[a-fA-F0-9]{40}$",
+              },
+              payment_proof: {
+                type: "string",
+                pattern: "^0x[a-fA-F0-9]{64}$",
+              },
+            },
+          },
+          x_basesentinel: {
+            method: "GET",
+            url_template: `${origin}/dossier/{address}`,
+            price: PAYMENT_PRODUCTS.dossier.amountDisplay,
+            amount_atomic: PAYMENT_PRODUCTS.dossier.amountAtomic,
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "basesentinel_watch",
+          description: `7-day watch: webhook on verdict/tax/flag changes. Cost ${PAYMENT_PRODUCTS.watch.amountDisplay}.`,
+          parameters: {
+            type: "object",
+            additionalProperties: false,
+            required: ["target_address", "webhook_url", "payment_proof"],
+            properties: {
+              target_address: {
+                type: "string",
+                pattern: "^0x[a-fA-F0-9]{40}$",
+              },
+              webhook_url: {
+                type: "string",
+                description: "HTTPS webhook for STATUS_CHANGED events",
+              },
+              payment_proof: {
+                type: "string",
+                pattern: "^0x[a-fA-F0-9]{64}$",
+              },
+            },
+          },
+          x_basesentinel: {
+            method: "POST",
+            url: `${origin}/watch`,
+            price: PAYMENT_PRODUCTS.watch.amountDisplay,
+            amount_atomic: PAYMENT_PRODUCTS.watch.amountAtomic,
+            ttl_seconds: 604800,
+          },
+        },
+      },
+    ],
   };
 }
 
@@ -456,6 +673,7 @@ export function buildX402WellKnown(origin: string, env: Env) {
     generated_at: now,
     updated_at: now,
     openapi: `${origin}/openapi.json`,
+    tools: `${origin}/tools.json`,
     ai_plugin: `${origin}/.well-known/ai-plugin.json`,
     owner_url: "https://blackswanlabs.pl",
     owner_contact: "blackswanlabsos@gmail.com",

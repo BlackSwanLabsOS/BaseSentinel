@@ -42,9 +42,12 @@ Asset: native USDC on Base — `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 Machine catalogs:  
 - https://api.blackswanlabs.pl/.well-known/x402.json  
 - https://api.blackswanlabs.pl/openapi.json  
-- Human docs mirror: https://api.blackswanlabs.pl/docs  
+- https://api.blackswanlabs.pl/tools.json (OpenAI-style tool schemas)  
+- Human docs: https://api.blackswanlabs.pl/docs  
 
-Settlement mode: **`tx_hash_proof`** (transfer + hash). Not EIP-3009 / Coinbase facilitator.
+Errors: `{ "error_code": "...", "message": "...", "error": "..." }` — branch on `error_code`.
+
+Settlement: **`tx_hash_proof`** (USDC transfer + hash).
 
 ---
 

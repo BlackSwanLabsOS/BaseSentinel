@@ -17,6 +17,7 @@ import { isAdminAuthorized, requireAdmin } from "./middleware/admin";
 import {
   buildAiPluginManifest,
   buildOpenApiDocument,
+  buildToolsDocument,
   buildX402WellKnown,
   corsPreflightResponse,
   withCors,
@@ -31,6 +32,7 @@ import { getCronState, runScheduledScan } from "./services/cronScanner";
 import { normalizeEthereumAddress } from "./utils/validation";
 import { isMarketingHost, landingResponse } from "./landing";
 import { M2M_DOCS_MARKDOWN } from "./docs/m2mQuickstart";
+import { apiErrorBody, apiErrorResponse, ErrorCode } from "./errors";
 import {
   createWatchSubscription,
   parseWatchCreateBody,
@@ -46,6 +48,10 @@ function jsonResponse(body: unknown, status = 200): Response {
       "Content-Type": "application/json; charset=utf-8",
     },
   });
+}
+
+function upstreamErrorResponse(message: string): Response {
+  return apiErrorResponse(ErrorCode.UPSTREAM_TIMEOUT, message, 502);
 }
 
 /**
@@ -79,7 +85,8 @@ function isDiscoveryPath(pathname: string): boolean {
     pathname === "/openapi.json" ||
     pathname === "/stream/threats" ||
     pathname === "/watch" ||
-    pathname === "/docs"
+    pathname === "/docs" ||
+    pathname === "/tools.json"
   );
 }
 
@@ -93,10 +100,17 @@ async function handleWatchRequest(
     parsed = parseWatchCreateBody(body);
   } catch (error) {
     if (error instanceof WatchValidationError) {
-      return withCors(jsonResponse({ error: error.message }, error.status));
+      const code = /address/i.test(error.message)
+        ? ErrorCode.INVALID_ADDRESS_FORMAT
+        : ErrorCode.INVALID_JSON;
+      return withCors(
+        apiErrorResponse(code, error.message, error.status),
+      );
     }
     if (error instanceof SyntaxError) {
-      return withCors(jsonResponse({ error: "Invalid JSON body" }, 400));
+      return withCors(
+        apiErrorResponse(ErrorCode.INVALID_JSON, "Invalid JSON body", 400),
+      );
     }
     throw error;
   }
@@ -195,7 +209,9 @@ function paymentErrorResponse(
     error instanceof PaymentBoundToOtherContractError ||
     error instanceof InvalidPaymentProofError
   ) {
-    return withCors(jsonResponse({ error: error.message }, error.status));
+    return withCors(
+      apiErrorResponse(error.errorCode, error.message, error.status),
+    );
   }
 
   return null;
@@ -210,9 +226,12 @@ async function handleDailyFeedRequest(
   const dateParam =
     dateFromPath ?? url.searchParams.get("date") ?? utcDateString();
   if (!isValidFeedDate(dateParam)) {
-    return jsonResponse(
-      { error: "Invalid date. Use YYYY-MM-DD (UTC)." },
-      400,
+    return withCors(
+      apiErrorResponse(
+        ErrorCode.INVALID_JSON,
+        "Invalid date. Use YYYY-MM-DD (UTC).",
+        400,
+      ),
     );
   }
 
@@ -275,14 +294,22 @@ export default {
           }
           const message =
             error instanceof Error ? error.message : "Unknown watch error";
-          return withCors(jsonResponse({ error: message }, 502));
+          return withCors(upstreamErrorResponse(message));
         }
       }
-      return jsonResponse({ error: "Method Not Allowed" }, 405);
+      return apiErrorResponse(
+        ErrorCode.METHOD_NOT_ALLOWED,
+        "Method Not Allowed",
+        405,
+      );
     }
 
     if (request.method !== "GET") {
-      return jsonResponse({ error: "Method Not Allowed" }, 405);
+      return apiErrorResponse(
+        ErrorCode.METHOD_NOT_ALLOWED,
+        "Method Not Allowed",
+        405,
+      );
     }
 
     if (url.pathname === "/.well-known/ai-plugin.json") {
@@ -295,6 +322,10 @@ export default {
 
     if (url.pathname === "/openapi.json") {
       return withCors(jsonResponse(buildOpenApiDocument(origin, env)));
+    }
+
+    if (url.pathname === "/tools.json") {
+      return withCors(jsonResponse(buildToolsDocument(origin, env)));
     }
 
     if (url.pathname === "/docs" || url.pathname === "/docs/") {
@@ -364,8 +395,9 @@ export default {
 
       const dateParam = url.searchParams.get("date") ?? utcDateString();
       if (!isValidFeedDate(dateParam)) {
-        return jsonResponse(
-          { error: "Invalid date. Use YYYY-MM-DD (UTC)." },
+        return apiErrorResponse(
+          ErrorCode.INVALID_JSON,
+          "Invalid date. Use YYYY-MM-DD (UTC).",
           400,
         );
       }
@@ -383,6 +415,7 @@ export default {
           ai_plugin: `${origin}/.well-known/ai-plugin.json`,
           x402: `${origin}/.well-known/x402.json`,
           openapi: `${origin}/openapi.json`,
+          tools: `${origin}/tools.json`,
           docs: `${origin}/docs`,
         },
         products: {
@@ -394,6 +427,7 @@ export default {
         },
         health: `${origin}/health`,
         docs: `${origin}/docs`,
+        tools: `${origin}/tools.json`,
       });
     }
 
@@ -405,7 +439,10 @@ export default {
         return withCors(
           jsonResponse(
             {
-              error: "Missing or invalid address",
+              ...apiErrorBody(
+                ErrorCode.INVALID_ADDRESS_FORMAT,
+                "Missing or invalid address",
+              ),
               usage: ["GET /dossier/0xYourContractAddress"],
             },
             400,
@@ -415,8 +452,9 @@ export default {
       const address = normalizeEthereumAddress(rawAddress);
       if (!address) {
         return withCors(
-          jsonResponse(
-            { error: "Invalid smart contract address format" },
+          apiErrorResponse(
+            ErrorCode.INVALID_ADDRESS_FORMAT,
+            "Invalid smart contract address format",
             400,
           ),
         );
@@ -436,9 +474,16 @@ export default {
         }
         const message =
           error instanceof Error ? error.message : "Unknown dossier error";
-        const status =
-          message === "Invalid smart contract address format" ? 400 : 502;
-        return withCors(jsonResponse({ error: message }, status));
+        if (message === "Invalid smart contract address format") {
+          return withCors(
+            apiErrorResponse(
+              ErrorCode.INVALID_ADDRESS_FORMAT,
+              message,
+              400,
+            ),
+          );
+        }
+        return withCors(upstreamErrorResponse(message));
       }
     }
 
@@ -454,7 +499,10 @@ export default {
         return withCors(
           jsonResponse(
             {
-              error: "Missing or invalid address",
+              ...apiErrorBody(
+                ErrorCode.INVALID_ADDRESS_FORMAT,
+                "Missing or invalid address",
+              ),
               usage: [
                 "GET /scan/0xYourContractAddress",
                 "GET /?address=0xYourContractAddress",
@@ -468,8 +516,9 @@ export default {
       const address = normalizeEthereumAddress(rawAddress);
       if (!address) {
         return withCors(
-          jsonResponse(
-            { error: "Invalid smart contract address format" },
+          apiErrorResponse(
+            ErrorCode.INVALID_ADDRESS_FORMAT,
+            "Invalid smart contract address format",
             400,
           ),
         );
@@ -492,14 +541,21 @@ export default {
         const message =
           error instanceof Error ? error.message : "Unknown scan error";
 
-        const status =
-          message === "Invalid smart contract address format" ? 400 : 502;
+        if (message === "Invalid smart contract address format") {
+          return withCors(
+            apiErrorResponse(
+              ErrorCode.INVALID_ADDRESS_FORMAT,
+              message,
+              400,
+            ),
+          );
+        }
 
-        return withCors(jsonResponse({ error: message }, status));
+        return withCors(upstreamErrorResponse(message));
       }
     }
 
-    return jsonResponse({ error: "Not Found" }, 404);
+    return apiErrorResponse(ErrorCode.NOT_FOUND, "Not Found", 404);
   },
 
   async scheduled(

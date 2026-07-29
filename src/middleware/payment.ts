@@ -6,6 +6,7 @@ import {
   resolveNetwork,
   type NetworkId,
 } from "../config/network";
+import { ErrorCode, isTimeoutMessage, type ErrorCode as ErrorCodeValue } from "../errors";
 import { getTransactionReceipt } from "../services/alchemy";
 import type { TransactionReceipt } from "../services/alchemy";
 
@@ -140,6 +141,7 @@ export interface EnforcePaymentOptions {
 
 export class PaymentRequiredError extends Error {
   readonly status = 402 as const;
+  readonly errorCode = ErrorCode.PAYMENT_REQUIRED;
   readonly product: PaymentProductId;
 
   constructor(product: PaymentProductId = "scan", message = "Payment Required") {
@@ -150,7 +152,8 @@ export class PaymentRequiredError extends Error {
 }
 
 export class PaymentReplayError extends Error {
-  readonly status = 400 as const;
+  readonly status = 409 as const;
+  readonly errorCode = ErrorCode.TX_HASH_CONSUMED;
 
   constructor(message = "Payment proof already used") {
     super(message);
@@ -159,7 +162,8 @@ export class PaymentReplayError extends Error {
 }
 
 export class PaymentBindingMismatchError extends Error {
-  readonly status = 400 as const;
+  readonly status = 409 as const;
+  readonly errorCode = ErrorCode.TX_HASH_BOUND_OTHER;
 
   constructor(message: string) {
     super(message);
@@ -178,11 +182,18 @@ export class PaymentBoundToOtherContractError extends PaymentBindingMismatchErro
 }
 
 export class InvalidPaymentProofError extends Error {
-  readonly status = 400 as const;
+  readonly status: 400 | 422 | 502;
+  readonly errorCode: ErrorCodeValue;
 
-  constructor(message: string) {
+  constructor(
+    message: string,
+    errorCode: ErrorCodeValue = ErrorCode.PAYMENT_INVALID,
+    status: 400 | 422 | 502 = 422,
+  ) {
     super(message);
     this.name = "InvalidPaymentProofError";
+    this.errorCode = errorCode;
+    this.status = status;
   }
 }
 
@@ -477,9 +488,11 @@ export function build402Response(
             : "https://basesentinel.local/scan/{address}");
   const x402 = buildX402PaymentRequired(env, resource, product);
 
+  const message = `Pay ${product.amountDisplay} on-chain, then retry with X-Payment-Proof set to the transaction hash.`;
   const body = {
+    error_code: ErrorCode.PAYMENT_REQUIRED,
     error: "Payment Required",
-    message: `Pay ${product.amountDisplay} on-chain, then retry with X-Payment-Proof set to the transaction hash.`,
+    message,
     payment_info: info,
     x402,
   };
@@ -508,27 +521,43 @@ function assertValidUsdcPayment(
   product: PaymentProduct,
 ): void {
   if (receipt.status !== "0x1") {
-    throw new InvalidPaymentProofError("Transaction failed on-chain");
+    throw new InvalidPaymentProofError(
+      "Transaction failed on-chain",
+      ErrorCode.PAYMENT_INVALID,
+      422,
+    );
   }
 
   const expectedTo = normalizeAddress(paymentAddress);
   const usdc = normalizeAddress(usdcContract);
 
-  const matchingTransfer = (receipt.logs ?? []).find((log) => {
-    if (normalizeAddress(log.address) !== usdc) return false;
-    if (!log.topics || log.topics.length < 3) return false;
-    if (normalizeAddress(log.topics[0]) !== ERC20_TRANSFER_TOPIC) return false;
+  let maxToTreasury = 0n;
+  let sawUsdcToTreasury = false;
 
-    const transferTo = addressFromTopic(log.topics[2]);
-    if (transferTo !== expectedTo) return false;
+  for (const log of receipt.logs ?? []) {
+    if (normalizeAddress(log.address) !== usdc) continue;
+    if (!log.topics || log.topics.length < 3) continue;
+    if (normalizeAddress(log.topics[0]) !== ERC20_TRANSFER_TOPIC) continue;
+    if (addressFromTopic(log.topics[2]) !== expectedTo) continue;
 
+    sawUsdcToTreasury = true;
     const amount = parseHexBigInt(log.data);
-    return amount >= product.minAmount;
-  });
+    if (amount > maxToTreasury) maxToTreasury = amount;
+  }
 
-  if (!matchingTransfer) {
+  if (!sawUsdcToTreasury) {
     throw new InvalidPaymentProofError(
-      `No valid USDC transfer of at least ${product.amountDisplay} to ${paymentAddress} found in transaction`,
+      `No USDC transfer to ${paymentAddress} found in transaction`,
+      ErrorCode.PAYMENT_INVALID,
+      422,
+    );
+  }
+
+  if (maxToTreasury < product.minAmount) {
+    throw new InvalidPaymentProofError(
+      `USDC transfer below required ${product.amountDisplay}`,
+      ErrorCode.INSUFFICIENT_USDC,
+      422,
     );
   }
 }
@@ -547,13 +576,26 @@ async function verifyPaymentOnChain(
     receipt = await getTransactionReceipt(txHash, env);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isTimeoutMessage(message)) {
+      throw new InvalidPaymentProofError(
+        `Upstream timeout verifying transaction: ${message}`,
+        ErrorCode.UPSTREAM_TIMEOUT,
+        502,
+      );
+    }
     throw new InvalidPaymentProofError(
       `Failed to verify transaction on-chain: ${message}`,
+      ErrorCode.PAYMENT_INVALID,
+      422,
     );
   }
 
   if (!receipt) {
-    throw new InvalidPaymentProofError("Transaction not found");
+    throw new InvalidPaymentProofError(
+      "Transaction not found",
+      ErrorCode.PAYMENT_INVALID,
+      422,
+    );
   }
 
   assertValidUsdcPayment(
@@ -599,6 +641,8 @@ export async function enforcePayment(
   if (!TX_HASH_RE.test(paymentProof)) {
     throw new InvalidPaymentProofError(
       "Invalid payment proof format. Expected a transaction hash (0x + 64 hex characters).",
+      ErrorCode.INVALID_PROOF_FORMAT,
+      400,
     );
   }
 

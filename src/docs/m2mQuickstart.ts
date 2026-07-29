@@ -5,7 +5,10 @@ Pay-per-call threat intel on **Base** (\`eip155:8453\`). No API keys.
 
 **API:** https://api.blackswanlabs.pl  
 **OpenAPI:** https://api.blackswanlabs.pl/openapi.json  
+**Agent tools:** https://api.blackswanlabs.pl/tools.json  
 **x402 catalog:** https://api.blackswanlabs.pl/.well-known/x402.json
+
+Errors return \`{ "error_code": "...", "message": "...", "error": "..." }\`. Branch on \`error_code\` (e.g. \`TX_HASH_CONSUMED\`, \`INSUFFICIENT_USDC\`, \`PAYMENT_REQUIRED\`).
 
 ---
 
