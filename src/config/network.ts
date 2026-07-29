@@ -20,16 +20,16 @@ const CAIP2_BY_NETWORK: Record<NetworkId, string> = {
   base: "eip155:8453",
 };
 
-/** Uniswap V2 factories used to discover newly listed tokens. */
-export const UNISWAP_V2_FACTORY_BY_NETWORK: Record<NetworkId, string> = {
-  "base-sepolia": "0x7Ae58f10f7849cA6F5fB71b7f45CB416c9204b1e",
-  base: "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
-};
-
 /** Canonical WETH on Base / Base Sepolia. */
 export const WETH_BY_NETWORK: Record<NetworkId, string> = {
   "base-sepolia": "0x4200000000000000000000000000000000000006",
   base: "0x4200000000000000000000000000000000000006",
+};
+
+/** Virtuals Protocol $VIRTUAL (Base mainnet). Sepolia: unused placeholder. */
+export const VIRTUAL_BY_NETWORK: Record<NetworkId, string> = {
+  "base-sepolia": "0x0000000000000000000000000000000000000000",
+  base: "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b",
 };
 
 const DEFAULT_NETWORK: NetworkId = "base-sepolia";
@@ -60,12 +60,17 @@ export function getCaip2Network(network: NetworkId): string {
   return CAIP2_BY_NETWORK[network];
 }
 
-export function getUniswapV2Factory(network: NetworkId): string {
-  return UNISWAP_V2_FACTORY_BY_NETWORK[network];
-}
+export {
+  getUniswapV2Factory,
+  UNISWAP_V2_FACTORY_BY_NETWORK,
+} from "./dexFactories";
 
 export function getWethAddress(network: NetworkId): string {
   return WETH_BY_NETWORK[network];
+}
+
+export function getVirtualTokenAddress(network: NetworkId): string {
+  return VIRTUAL_BY_NETWORK[network];
 }
 
 /** Numeric chain id for GoPlus / explorers. */

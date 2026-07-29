@@ -93,9 +93,13 @@ export function createThreatEventStream(
                 data: {
                   contract: event.contract,
                   network: event.network,
+                  status:
+                    event.status ??
+                    (event.riskScore >= 70 ? "SCAM" : "SUSPICIOUS"),
                   riskScore: event.riskScore,
                   timestamp: event.timestamp,
                   reasons: event.reasons,
+                  listing: event.listing ?? null,
                 },
               }),
             );

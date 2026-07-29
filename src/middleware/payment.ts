@@ -13,18 +13,16 @@ export const PAYMENT_DECIMALS = 6;
 export const PAYMENT_PROOF_TTL_SECONDS = 86_400; // 24 hours
 export const PAYMENT_MAX_TIMEOUT_SECONDS = 300;
 
-/** @deprecated Prefer PAYMENT_PRODUCTS.scan — kept for discovery defaults. */
-export const PAYMENT_AMOUNT = "0.001 USDC";
-/** @deprecated Prefer PAYMENT_PRODUCTS.scan.amountAtomic */
-export const PAYMENT_AMOUNT_ATOMIC = "1000";
 /** @deprecated Prefer getUsdcContractAddress(resolveNetwork(env)) */
 export const USDC_CONTRACT_ADDRESS = getUsdcContractAddress("base-sepolia");
 /** @deprecated Prefer resolveNetwork(env) */
 export const PAYMENT_NETWORK: NetworkId = "base-sepolia";
-/** @deprecated Prefer PAYMENT_PRODUCTS.scan.minAmount */
-export const REQUIRED_USDC_AMOUNT = 1000n;
 
-export type PaymentProductId = "scan" | "daily_feed" | "live_stream";
+export type PaymentProductId =
+  | "scan"
+  | "daily_feed"
+  | "live_stream"
+  | "dossier";
 
 export interface PaymentProduct {
   id: PaymentProductId;
@@ -40,10 +38,11 @@ export interface PaymentProduct {
 export const PAYMENT_PRODUCTS: Record<PaymentProductId, PaymentProduct> = {
   scan: {
     id: "scan",
-    minAmount: 1000n, // 0.001 USDC
-    amountAtomic: "1000",
-    amountDisplay: "0.001 USDC",
-    description: "BaseSentinel smart-contract security scan",
+    minAmount: 5_000n, // 0.005 USDC
+    amountAtomic: "5000",
+    amountDisplay: "0.005 USDC",
+    description:
+      "On-demand Base contract scan (bytecode + GoPlus + honeypot.is) with CLEAR/CAUTION/AVOID verdict",
     bindingLabel: "contract",
   },
   daily_feed: {
@@ -51,7 +50,8 @@ export const PAYMENT_PRODUCTS: Record<PaymentProductId, PaymentProduct> = {
     minAmount: 10_000n, // 0.01 USDC
     amountAtomic: "10000",
     amountDisplay: "0.01 USDC",
-    description: "BaseSentinel daily threat intelligence feed",
+    description:
+      "Daily Base threat pack (SCAM + SUSPICIOUS) from watched DEX/launcher coverage",
     bindingLabel: "feed date",
   },
   live_stream: {
@@ -59,10 +59,27 @@ export const PAYMENT_PRODUCTS: Record<PaymentProductId, PaymentProduct> = {
     minAmount: 5_000n, // 0.005 USDC per UTC day of streaming
     amountAtomic: "5000",
     amountDisplay: "0.005 USDC",
-    description: "BaseSentinel live threat SSE stream",
+    description:
+      "Live SSE stream of newly flagged Base threats (SCAM/SUSPICIOUS)",
     bindingLabel: "stream day",
   },
+  dossier: {
+    id: "dossier",
+    minAmount: 250_000n, // 0.25 USDC
+    amountAtomic: "250000",
+    amountDisplay: "0.25 USDC",
+    description:
+      "Premium Base dossier: security verdict + market structure (deployer %, top holders, LP status)",
+    bindingLabel: "contract",
+  },
 };
+
+/** @deprecated Prefer PAYMENT_PRODUCTS.scan — kept for discovery defaults. */
+export const PAYMENT_AMOUNT = PAYMENT_PRODUCTS.scan.amountDisplay;
+/** @deprecated Prefer PAYMENT_PRODUCTS.scan.amountAtomic */
+export const PAYMENT_AMOUNT_ATOMIC = PAYMENT_PRODUCTS.scan.amountAtomic;
+/** @deprecated Prefer PAYMENT_PRODUCTS.scan.minAmount */
+export const REQUIRED_USDC_AMOUNT = PAYMENT_PRODUCTS.scan.minAmount;
 
 /** keccak256("Transfer(address,address,uint256)") */
 const ERC20_TRANSFER_TOPIC =
@@ -241,11 +258,35 @@ function buildX402PaymentRequired(
       },
     ],
     extensions: {
+      bazaar: {
+        discoverable: true,
+        info: {
+          input: {
+            type: "http",
+            method: "GET",
+            headers: {
+              "X-Payment-Proof": "<base_usdc_tx_hash>",
+            },
+          },
+          output: {
+            type: "json",
+            example: {
+              status: "SAFE",
+              riskScore: 12,
+              verdict: "CLEAR",
+              verdict_score: 88,
+              risk_flags: [],
+              reasons: ["None"],
+            },
+          },
+        },
+      },
       baseSentinel: {
         product: product.id,
         proofHeader: PAYMENT_PROOF_HEADER,
         binding: `one_tx_hash_per_${product.bindingLabel.replace(/\s+/g, "_")}`,
         humanNetwork: info.network,
+        settlement: "onchain_usdc_tx_hash",
       },
     },
   };

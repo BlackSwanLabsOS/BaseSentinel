@@ -1,5 +1,6 @@
 import type { Env } from "./types";
 import { scanContract } from "./services/scanner";
+import { buildPremiumDossier } from "./services/premiumDossier";
 import {
   build402Response,
   dailyFeedBindingKey,
@@ -15,6 +16,7 @@ import { isAdminAuthorized, requireAdmin } from "./middleware/admin";
 import {
   buildAiPluginManifest,
   buildOpenApiDocument,
+  buildX402WellKnown,
   corsPreflightResponse,
   withCors,
 } from "./discovery/manifest";
@@ -26,6 +28,7 @@ import {
 import { createThreatEventStream } from "./services/threatStream";
 import { getCronState, runScheduledScan } from "./services/cronScanner";
 import { normalizeEthereumAddress } from "./utils/validation";
+import { isMarketingHost, landingResponse } from "./landing";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return Response.json(body, {
@@ -37,11 +40,15 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /**
- * Extracts a raw address candidate from path or query.
- * Does NOT validate — call normalizeEthereumAddress before use.
+ * Extracts a raw address candidate from /scan/{addr} or /dossier/{addr} or ?address=.
  */
-function extractRawScanAddress(url: URL): string | null {
-  const pathMatch = url.pathname.match(/^\/scan\/([^/]+)\/?$/);
+function extractRawAddress(
+  url: URL,
+  productPath: "scan" | "dossier",
+): string | null {
+  const pathMatch = url.pathname.match(
+    new RegExp(`^\\/${productPath}\\/([^/]+)\\/?$`),
+  );
   if (pathMatch?.[1]) {
     try {
       return decodeURIComponent(pathMatch[1]);
@@ -50,12 +57,16 @@ function extractRawScanAddress(url: URL): string | null {
     }
   }
 
-  return url.searchParams.get("address");
+  if (productPath === "scan") {
+    return url.searchParams.get("address");
+  }
+  return null;
 }
 
 function isDiscoveryPath(pathname: string): boolean {
   return (
     pathname === "/.well-known/ai-plugin.json" ||
+    pathname === "/.well-known/x402.json" ||
     pathname === "/openapi.json" ||
     pathname === "/stream/threats"
   );
@@ -114,8 +125,10 @@ async function handleDailyFeedRequest(
   request: Request,
   env: Env,
   url: URL,
+  dateFromPath?: string,
 ): Promise<Response> {
-  const dateParam = url.searchParams.get("date") ?? utcDateString();
+  const dateParam =
+    dateFromPath ?? url.searchParams.get("date") ?? utcDateString();
   if (!isValidFeedDate(dateParam)) {
     return jsonResponse(
       { error: "Invalid date. Use YYYY-MM-DD (UTC)." },
@@ -159,6 +172,14 @@ export default {
     const url = new URL(request.url);
     const origin = url.origin;
 
+    // Apex / www = product site; api.* = JSON API.
+    if (
+      isMarketingHost(url.hostname) &&
+      (url.pathname === "/" || url.pathname === "")
+    ) {
+      return landingResponse();
+    }
+
     if (request.method === "OPTIONS" && isDiscoveryPath(url.pathname)) {
       return corsPreflightResponse();
     }
@@ -169,6 +190,10 @@ export default {
 
     if (url.pathname === "/.well-known/ai-plugin.json") {
       return withCors(jsonResponse(buildAiPluginManifest(origin, env)));
+    }
+
+    if (url.pathname === "/.well-known/x402.json") {
+      return withCors(jsonResponse(buildX402WellKnown(origin, env)));
     }
 
     if (url.pathname === "/openapi.json") {
@@ -206,6 +231,13 @@ export default {
     }
 
     // Public commercial feed (402) + optional admin bypass.
+    // Path form preferred for directories: /api/feed/daily/YYYY-MM-DD
+    const dailyFeedPath = url.pathname.match(
+      /^\/api\/feed\/daily\/(\d{4}-\d{2}-\d{2})$/,
+    );
+    if (dailyFeedPath) {
+      return handleDailyFeedRequest(request, env, url, dailyFeedPath[1]);
+    }
     if (url.pathname === "/api/feed/daily") {
       return handleDailyFeedRequest(request, env, url);
     }
@@ -241,15 +273,62 @@ export default {
         timestamp: new Date().toISOString(),
         discovery: {
           ai_plugin: `${origin}/.well-known/ai-plugin.json`,
+          x402: `${origin}/.well-known/x402.json`,
           openapi: `${origin}/openapi.json`,
         },
         products: {
           scan: `${origin}/scan/{address}`,
-          daily_feed: `${origin}/api/feed/daily?date=YYYY-MM-DD`,
+          dossier: `${origin}/dossier/{address}`,
+          daily_feed: `${origin}/api/feed/daily/YYYY-MM-DD`,
           live_stream: `${origin}/stream/threats`,
         },
         health: `${origin}/health`,
       });
+    }
+
+    const isDossierPath =
+      url.pathname === "/dossier" || url.pathname.startsWith("/dossier/");
+    if (isDossierPath) {
+      const rawAddress = extractRawAddress(url, "dossier");
+      if (!rawAddress) {
+        return withCors(
+          jsonResponse(
+            {
+              error: "Missing or invalid address",
+              usage: ["GET /dossier/0xYourContractAddress"],
+            },
+            400,
+          ),
+        );
+      }
+      const address = normalizeEthereumAddress(rawAddress);
+      if (!address) {
+        return withCors(
+          jsonResponse(
+            { error: "Invalid smart contract address format" },
+            400,
+          ),
+        );
+      }
+      try {
+        await enforcePayment(request, env, {
+          product: "dossier",
+          bindingKey: address,
+          resourceUrl: request.url,
+        });
+        const result = await buildPremiumDossier(address, env);
+        return withCors(jsonResponse(result));
+      } catch (error) {
+        const paidError = paymentErrorResponse(error, env, request.url);
+        if (paidError) {
+          return paidError;
+        }
+        const message =
+          error instanceof Error ? error.message : "Unknown dossier error";
+        const status =
+          message === "Invalid smart contract address format" ? 400 : 502;
+        return withCors(jsonResponse({ error: message }, status));
+      }
     }
 
     const isScanPath =
@@ -258,7 +337,7 @@ export default {
       url.pathname === "/" && url.searchParams.has("address");
 
     if (isScanPath || isAddressQuery) {
-      const rawAddress = extractRawScanAddress(url);
+      const rawAddress = extractRawAddress(url, "scan");
 
       if (!rawAddress) {
         return withCors(

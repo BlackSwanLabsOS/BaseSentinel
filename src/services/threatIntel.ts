@@ -1,6 +1,11 @@
 import type { Env } from "../types";
+import {
+  statusFromScore,
+  type AnalysisStatus,
+} from "./analyzer";
 import { resolveNetwork } from "../config/network";
 import { notifyDiscordFromEnv } from "./discord";
+import type { ScanDossier } from "./scanTypes";
 
 /** Threat records are kept without TTL (durable intel archive). */
 const DAY_INDEX_TTL_SECONDS = 90 * 86_400; // 90 days
@@ -8,11 +13,16 @@ const DAY_INDEX_TTL_SECONDS = 90 * 86_400; // 90 days
 export interface ThreatRecord {
   address: string;
   network: string;
+  status: AnalysisStatus;
   reasons: string[];
   riskScore: number;
   timestamp: string;
   lastSeen: string;
   bytecodeLength?: number;
+  dossier?: Pick<
+    ScanDossier,
+    "goplus" | "honeypotIs" | "listing" | "dualSourceConsensus"
+  >;
 }
 
 export interface DailyThreatFeed {
@@ -21,15 +31,21 @@ export interface DailyThreatFeed {
   date: string;
   generatedAt: string;
   count: number;
+  counts: {
+    scam: number;
+    suspicious: number;
+  };
   threats: ThreatRecord[];
 }
 
-interface ScamScanInput {
+interface ThreatScanInput {
   address: string;
   network: string;
+  status: AnalysisStatus;
   reasons: string[];
   riskScore: number;
   bytecodeLength: number;
+  dossier?: ScanDossier;
 }
 
 export interface RecordThreatOptions {
@@ -54,17 +70,22 @@ export function isValidFeedDate(date: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(date);
 }
 
+function severityRank(status: AnalysisStatus): number {
+  if (status === "SCAM") return 2;
+  if (status === "SUSPICIOUS") return 1;
+  return 0;
+}
+
 /**
- * Persists a SCAM verdict into the threat-intel archive + daily index.
- * Idempotent per address: updates lastSeen / risk metadata if already known.
- * First-seen SCAMs also fan out to SSE buffer + Discord webhook (if configured).
+ * Persists SUSPICIOUS / SCAM into the threat-intel archive + daily index.
+ * SAFE is ignored. First-seen and severity upgrades fan out to SSE + Discord.
  */
 export async function recordThreat(
   env: Env,
-  scan: ScamScanInput,
+  scan: ThreatScanInput,
   options: RecordThreatOptions = {},
 ): Promise<void> {
-  if (scan.riskScore < 75) {
+  if (scan.status === "SAFE") {
     return;
   }
 
@@ -75,22 +96,50 @@ export async function recordThreat(
   const existing = (await env.SCAN_CACHE.get(key, "json")) as ThreatRecord | null;
   const isNew = !existing;
 
+  const nextScore = Math.max(existing?.riskScore ?? 0, scan.riskScore);
+  const nextStatus = statusFromScore(nextScore);
+  // Prefer explicit higher severity if scores tie oddly.
+  const mergedStatus =
+    severityRank(scan.status) > severityRank(nextStatus)
+      ? scan.status
+      : nextStatus;
+
   const record: ThreatRecord = existing
     ? {
         ...existing,
+        status: mergedStatus,
         reasons: scan.reasons,
-        riskScore: Math.max(existing.riskScore, scan.riskScore),
+        riskScore: nextScore,
         lastSeen: now,
         bytecodeLength: scan.bytecodeLength,
+        dossier: {
+          goplus: scan.dossier?.goplus ?? existing.dossier?.goplus ?? null,
+          honeypotIs:
+            scan.dossier?.honeypotIs ?? existing.dossier?.honeypotIs ?? null,
+          listing: scan.dossier?.listing ?? existing.dossier?.listing ?? null,
+          dualSourceConsensus:
+            scan.dossier?.dualSourceConsensus ??
+            existing.dossier?.dualSourceConsensus ??
+            false,
+        },
       }
     : {
         address,
         network: scan.network || resolveNetwork(env),
+        status: scan.status,
         reasons: scan.reasons,
         riskScore: scan.riskScore,
         timestamp: now,
         lastSeen: now,
         bytecodeLength: scan.bytecodeLength,
+        dossier: scan.dossier
+          ? {
+              goplus: scan.dossier.goplus,
+              honeypotIs: scan.dossier.honeypotIs,
+              listing: scan.dossier.listing,
+              dualSourceConsensus: scan.dossier.dualSourceConsensus,
+            }
+          : undefined,
       };
 
   await env.SCAN_CACHE.put(key, JSON.stringify(record));
@@ -98,28 +147,36 @@ export async function recordThreat(
   const day = utcDateString(new Date(now));
   await appendToDayIndex(env, day, address);
 
-  const shouldFanOut = isNew || record.riskScore > (existing?.riskScore ?? 0);
+  const upgraded =
+    existing !== null &&
+    severityRank(record.status) > severityRank(existing.status ?? "SAFE");
+  const scoreUp = record.riskScore > (existing?.riskScore ?? 0);
+  const shouldFanOut = isNew || upgraded || scoreUp;
 
-  // Fan-out buffer for SSE sniper clients (pollable live feed).
   if (shouldFanOut) {
     await pushRecentThreat(env, {
       id: `${now}|${address}`,
       contract: address,
       network: record.network,
+      status: record.status,
       riskScore: record.riskScore,
       timestamp: now,
       reasons: record.reasons,
+      listing: record.dossier?.listing ?? null,
     });
   }
 
-  // Discord only on first detection — avoids spam on cache refreshes / re-scans.
-  if (isNew) {
+  // Discord on first detection or upgrade to SCAM.
+  if (isNew || upgraded) {
     const notifyTask = notifyDiscordFromEnv(env, {
       address: record.address,
       network: record.network,
+      status: record.status === "SCAM" ? "SCAM" : "SUSPICIOUS",
       riskScore: record.riskScore,
       reasons: record.reasons,
       timestamp: record.timestamp,
+      listingSource: record.dossier?.listing?.source ?? null,
+      listingTx: record.dossier?.listing?.txHash ?? null,
     });
 
     if (options.waitUntil) {
@@ -137,9 +194,11 @@ export interface RecentThreatEvent {
   id: string;
   contract: string;
   network: string;
+  status: AnalysisStatus;
   riskScore: number;
   timestamp: string;
   reasons: string[];
+  listing?: ScanDossier["listing"];
 }
 
 async function pushRecentThreat(
@@ -158,7 +217,7 @@ async function pushRecentThreat(
   );
 }
 
-/** Newest-first recent SCAM events for live SSE polling. */
+/** Newest-first recent threat events for live SSE polling. */
 export async function listRecentThreats(
   env: Env,
 ): Promise<RecentThreatEvent[]> {
@@ -188,8 +247,7 @@ async function appendToDayIndex(
 }
 
 /**
- * Builds an exportable daily threat package.
- * Prefers the day index; falls back to prefix listing filtered by timestamp date.
+ * Builds an exportable daily threat package (SCAM + SUSPICIOUS).
  */
 export async function buildDailyThreatFeed(
   env: Env,
@@ -216,7 +274,9 @@ export async function buildDailyThreatFeed(
     )) as ThreatRecord | null;
 
     if (record) {
-      threats.push(record);
+      // Backfill status for older KV records written before SUSPICIOUS existed.
+      const status = record.status ?? statusFromScore(record.riskScore);
+      threats.push({ ...record, status });
     }
   }
 
@@ -228,6 +288,10 @@ export async function buildDailyThreatFeed(
     date,
     generatedAt: new Date().toISOString(),
     count: threats.length,
+    counts: {
+      scam: threats.filter((t) => t.status === "SCAM").length,
+      suspicious: threats.filter((t) => t.status === "SUSPICIOUS").length,
+    },
     threats,
   };
 }

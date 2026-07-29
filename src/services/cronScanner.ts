@@ -5,9 +5,11 @@ import {
   resolveCronFromBlock,
 } from "./pairDiscovery";
 import { scanContract } from "./scanner";
+import { notifyCronDigest } from "./discord";
 
 const CRON_STATE_KEY = "cron:state";
-const MAX_SCANS_PER_RUN = 8;
+/** Cap scans/tick to stay within free Alchemy + GoPlus limits. */
+const MAX_SCANS_PER_RUN = 10;
 
 export interface CronState {
   lastRunAt: string | null;
@@ -22,11 +24,13 @@ export interface CronRunStats {
   discovered: number;
   scanned: number;
   scams: number;
+  suspicious: number;
   skippedCachedOrLimit: number;
   errors: number;
   fromBlock: number;
   toBlock: number;
   durationMs: number;
+  bySource?: Record<string, number>;
 }
 
 export interface CronRunResult {
@@ -40,6 +44,7 @@ function emptyStats(fromBlock = 0, toBlock = 0): CronRunStats {
     discovered: 0,
     scanned: 0,
     scams: 0,
+    suspicious: 0,
     skippedCachedOrLimit: 0,
     errors: 0,
     fromBlock,
@@ -98,6 +103,7 @@ export async function runScheduledScan(
     const discovery = await discoverRecentTokens(env, fromBlock);
     const stats = emptyStats(discovery.fromBlock, discovery.toBlock);
     stats.discovered = discovery.tokens.length;
+    stats.bySource = discovery.bySource;
 
     // Prefer newest listings first (sniper-relevant).
     const candidates = [...discovery.tokens].sort(
@@ -113,10 +119,19 @@ export async function runScheduledScan(
       try {
         const result = await scanContract(token.address, env, {
           waitUntil: ctx ? (p) => ctx.waitUntil(p) : undefined,
+          listing: {
+            source: token.source,
+            pair: token.pair,
+            pairedWith: token.pairedWith,
+            txHash: token.txHash,
+            blockNumber: token.blockNumber,
+          },
         });
         stats.scanned += 1;
         if (result.status === "SCAM") {
           stats.scams += 1;
+        } else if (result.status === "SUSPICIOUS") {
+          stats.suspicious += 1;
         }
       } catch (error) {
         stats.errors += 1;
@@ -139,8 +154,24 @@ export async function runScheduledScan(
     };
     await saveCronState(env, nextState);
 
+    const digestTask = notifyCronDigest(env.DISCORD_WEBHOOK_URL, {
+      discovered: stats.discovered,
+      scanned: stats.scanned,
+      scams: stats.scams,
+      suspicious: stats.suspicious,
+      errors: stats.errors,
+      fromBlock: stats.fromBlock,
+      toBlock: stats.toBlock,
+      bySource: stats.bySource,
+    });
+    if (ctx) {
+      ctx.waitUntil(digestTask);
+    } else {
+      await digestTask;
+    }
+
     console.log(
-      `[cron] ok discovered=${stats.discovered} scanned=${stats.scanned} scams=${stats.scams} errors=${stats.errors} blocks=${stats.fromBlock}-${stats.toBlock}`,
+      `[cron] ok discovered=${stats.discovered} scanned=${stats.scanned} scams=${stats.scams} suspicious=${stats.suspicious} errors=${stats.errors} blocks=${stats.fromBlock}-${stats.toBlock} sources=${JSON.stringify(stats.bySource)}`,
     );
 
     return { ok: true, stats };

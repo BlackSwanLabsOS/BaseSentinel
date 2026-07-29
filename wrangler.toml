@@ -1,6 +1,7 @@
 name = "base-sentinel"
 main = "src/index.ts"
 compatibility_date = "2026-07-28"
+workers_dev = true
 
 # Receiving wallet for M2M scan payments (replace with your address).
 [vars]
@@ -11,6 +12,19 @@ NETWORK = "base"
 binding = "SCAN_CACHE"
 id = "083d1d22fbd0476798f3fdaa6cdad67d"
 
-# Auto-discover + scan newly paired tokens every 5 minutes.
+# Auto-discover + scan newly paired tokens every 2 minutes.
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/2 * * * *"]
+
+# Custom domains (Cloudflare zone: blackswanlabs.pl)
+[[routes]]
+pattern = "api.blackswanlabs.pl"
+custom_domain = true
+
+[[routes]]
+pattern = "blackswanlabs.pl"
+custom_domain = true
+
+[[routes]]
+pattern = "www.blackswanlabs.pl"
+custom_domain = true
