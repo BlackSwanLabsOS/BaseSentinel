@@ -113,10 +113,18 @@ curl -s -X POST "https://api.blackswanlabs.pl/watch" \\
 
 ## Discovery (where agents find us)
 
+**On our host**
+
 - \`/tools.json\` — OpenAI-style function schemas
 - \`/openapi.json\` — full HTTP contract
 - \`/.well-known/x402.json\` — payment / catalog metadata
-- Ontario Protocol, Virtuals ACP, x402-list
+
+**External**
+
+- Ontario Protocol — listed (\`ready\`, paid); integrity pending (tx-hash settle, not facilitator)
+- Virtuals ACP — BaseSentinel agent registered
+- x402-list — submitted, awaiting manual approval (probe OK)
+- Coinbase Bazaar — not fully indexable until facilitator settle; we stay on \`tx_hash_proof\`
 
 Integrate through catalogs and the payment loop above.
 
