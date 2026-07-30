@@ -5,6 +5,7 @@ import {
   getWethAddress,
   resolveNetwork,
 } from "../config/network";
+import { getBluechipAddresses } from "../config/bluechips";
 import {
   getDexFactories,
   type DexFactorySource,
@@ -174,6 +175,7 @@ export async function discoverRecentTokens(
       getWethAddress(network),
       getUsdcContractAddress(network),
       getVirtualTokenAddress(network),
+      ...getBluechipAddresses(network),
     ]
       .filter((a) => a && !/^0x0{40}$/i.test(a))
       .map((a) => a.toLowerCase()),

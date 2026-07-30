@@ -472,7 +472,12 @@ export default {
           resourceUrl: request.url,
         });
         const result = await buildPremiumDossier(address, env);
-        return withCors(jsonResponse(result));
+        return withCors(
+          jsonResponse({
+            ...result,
+            access: isAdminAuthorized(request, env) ? "admin" : "paid",
+          }),
+        );
       } catch (error) {
         const paidError = paymentErrorResponse(error, env, request.url);
         if (paidError) {
@@ -537,7 +542,12 @@ export default {
           resourceUrl: request.url,
         });
         const result = await scanContract(address, env);
-        return withCors(jsonResponse(result));
+        return withCors(
+          jsonResponse({
+            ...result,
+            access: isAdminAuthorized(request, env) ? "admin" : "paid",
+          }),
+        );
       } catch (error) {
         const paidError = paymentErrorResponse(error, env, request.url);
         if (paidError) {

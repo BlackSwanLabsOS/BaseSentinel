@@ -9,6 +9,7 @@ import {
 import { ErrorCode, isTimeoutMessage, type ErrorCode as ErrorCodeValue } from "../errors";
 import { getTransactionReceipt } from "../services/alchemy";
 import type { TransactionReceipt } from "../services/alchemy";
+import { isAdminAuthorized } from "./admin";
 
 export const PAYMENT_DECIMALS = 6;
 export const PAYMENT_PROOF_TTL_SECONDS = 86_400; // 24 hours
@@ -608,12 +609,17 @@ async function verifyPaymentOnChain(
 
 /**
  * Enforces M2M payment for a product + binding key (contract or feed date).
+ * Admin (`X-Admin-Key` / `X-Admin-Secret`) skips payment for smoke / ops.
  */
 export async function enforcePayment(
   request: Request,
   env: Env,
   contractAddressOrOptions: string | EnforcePaymentOptions,
 ): Promise<void> {
+  if (isAdminAuthorized(request, env)) {
+    return;
+  }
+
   if (!env.PAYMENT_ADDRESS) {
     throw new Error("PAYMENT_ADDRESS is not configured");
   }

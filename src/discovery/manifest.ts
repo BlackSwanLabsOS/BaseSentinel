@@ -32,7 +32,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type, X-Payment-Proof, X-Payment-Signature, PAYMENT-SIGNATURE, X-Admin-Key",
+    "Content-Type, X-Payment-Proof, X-Payment-Signature, PAYMENT-SIGNATURE, X-Admin-Key, X-Admin-Secret",
   "Access-Control-Expose-Headers":
     "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Payment-Required, X-Payment-Amount, X-Payment-Amount-Display, X-Payment-Network, X-Payment-Address, X-Payment-Recipient, X-Payment-Asset, X-Payment-Token, X-Payment-Product",
   "Access-Control-Max-Age": "86400",

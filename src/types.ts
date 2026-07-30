@@ -3,7 +3,7 @@ export interface Env {
   ALCHEMY_API_KEY: string;
   /** Treasury wallet receiving USDC payments. */
   PAYMENT_ADDRESS: string;
-  /** Admin key for diagnostics endpoints (X-Admin-Key). */
+  /** Admin key for diagnostics + payment smoke bypass (`X-Admin-Key` / `X-Admin-Secret`). */
   ADMIN_API_KEY: string;
   /** Chain: `base` (production) or `base-sepolia` (local tests). */
   NETWORK: string;

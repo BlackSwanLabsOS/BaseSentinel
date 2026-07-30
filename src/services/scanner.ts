@@ -1,6 +1,10 @@
 import type { Env } from "../types";
 import { resolveNetwork } from "../config/network";
 import {
+  getBluechipSymbol,
+  isBluechipAddress,
+} from "../config/bluechips";
+import {
   analyzeBytecode,
   enrichAnalysis,
   type AnalysisStatus,
@@ -121,6 +125,35 @@ export async function scanContract(
 
   const network = resolveNetwork(env);
   const key = cacheKey(network, address);
+
+  // Known Base bluechips: SAFE/CLEAR, skip GoPlus / honeypot / bytecode heuristics.
+  if (isBluechipAddress(network, address)) {
+    const symbol = getBluechipSymbol(network, address) ?? "BLUECHIP";
+    const result: ScanResult = {
+      address,
+      network,
+      status: "SAFE",
+      riskScore: 0,
+      reasons: [`Bluechip_Allowlist:${symbol}`],
+      bytecodeLength: 0,
+      cachedAt: new Date().toISOString(),
+      dossier: {
+        goplus: null,
+        honeypotIs: null,
+        listing: options.listing ?? null,
+        ageHintSeconds: null,
+        dualSourceConsensus: false,
+      },
+      verdict: "CLEAR",
+      verdict_score: 100,
+      risk_flags: [],
+    };
+    await kvPutBestEffort(env.SCAN_CACHE, key, JSON.stringify(result), {
+      expirationTtl: CACHE_TTL_SECONDS,
+    });
+    return result;
+  }
+
   const cached = options.bypassCache
     ? null
     : await env.SCAN_CACHE.get(key, "json");

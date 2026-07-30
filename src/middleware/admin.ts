@@ -28,13 +28,20 @@ export function requireAdmin(request: Request, env: Env): Response | null {
   return null;
 }
 
-/** Returns true when a valid admin key is present. */
+/**
+ * Returns true when a valid admin secret is present.
+ * Accepts `X-Admin-Key` (canonical) or `X-Admin-Secret` (smoke / alias).
+ * Compared against `ADMIN_API_KEY` (wrangler secret).
+ */
 export function isAdminAuthorized(request: Request, env: Env): boolean {
   if (!env.ADMIN_API_KEY) {
     return false;
   }
 
-  const provided = request.headers.get("X-Admin-Key")?.trim() ?? "";
+  const provided =
+    request.headers.get("X-Admin-Key")?.trim() ||
+    request.headers.get("X-Admin-Secret")?.trim() ||
+    "";
   if (!provided) {
     return false;
   }
