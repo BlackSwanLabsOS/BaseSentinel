@@ -117,6 +117,20 @@ function parseFactoryLog(
         dualSided: false,
       };
     }
+    case "zora_coin_created": {
+      // Non-indexed layout starts: currency, uri_off, name_off, symbol_off, coin, ...
+      if (!log.data || log.data.length < 2 + 5 * 64) return null;
+      const coin = addressFromDataWord(log.data, 4);
+      if (!coin || coin === "0x0000000000000000000000000000000000000000") {
+        return null;
+      }
+      return {
+        token0: coin,
+        token1: getWethAddress("base").toLowerCase(),
+        pool: coin,
+        dualSided: false,
+      };
+    }
     default:
       return null;
   }

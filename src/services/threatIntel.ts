@@ -5,6 +5,7 @@ import {
 } from "./analyzer";
 import { resolveNetwork } from "../config/network";
 import { notifyDiscordFromEnv } from "./discord";
+import { kvPutBestEffort } from "./kvSafe";
 import type { ScanDossier } from "./scanTypes";
 import type { AgentVerdict } from "./verdict";
 
@@ -108,6 +109,15 @@ export async function recordThreat(
       ? scan.status
       : nextStatus;
 
+  // Skip KV writes when nothing material changed (cron often re-sees known threats).
+  if (
+    existing &&
+    severityRank(mergedStatus) <= severityRank(existing.status ?? "SAFE") &&
+    nextScore <= (existing.riskScore ?? 0)
+  ) {
+    return;
+  }
+
   const record: ThreatRecord = existing
     ? {
         ...existing,
@@ -146,7 +156,7 @@ export async function recordThreat(
           : undefined,
       };
 
-  await env.SCAN_CACHE.put(key, JSON.stringify(record));
+  await kvPutBestEffort(env.SCAN_CACHE, key, JSON.stringify(record));
 
   const day = utcDateString(new Date(now));
   await appendToDayIndex(env, day, address);
@@ -218,7 +228,8 @@ async function pushRecentThreat(
       | null) ?? [];
 
   const next = [event, ...current.filter((e) => e.contract !== event.contract)];
-  await env.SCAN_CACHE.put(
+  await kvPutBestEffort(
+    env.SCAN_CACHE,
     RECENT_THREATS_KEY,
     JSON.stringify(next.slice(0, MAX_RECENT_THREATS)),
   );
@@ -248,7 +259,7 @@ async function appendToDayIndex(
   }
 
   current.push(address);
-  await env.SCAN_CACHE.put(key, JSON.stringify(current), {
+  await kvPutBestEffort(env.SCAN_CACHE, key, JSON.stringify(current), {
     expirationTtl: DAY_INDEX_TTL_SECONDS,
   });
 }

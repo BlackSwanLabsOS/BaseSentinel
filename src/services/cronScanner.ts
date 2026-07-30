@@ -5,18 +5,28 @@ import {
   resolveCronFromBlock,
 } from "./pairDiscovery";
 import { scanContract } from "./scanner";
-import { notifyCronDigest } from "./discord";
+import { notifyCronDigest, notifyOpsDiscovery } from "./discord";
 import { runWatchChecks, type WatchRunStats } from "./watchList";
+import { kvPutBestEffort } from "./kvSafe";
 
 const CRON_STATE_KEY = "cron:state";
 /** Max full contract scans per cron tick. */
 const MAX_SCANS_PER_RUN = 10;
+/**
+ * On quiet ticks, persist cron cursor at most this often.
+ * Free KV allows ~1000 writes/day — a put every minute alone exceeds that.
+ */
+const QUIET_STATE_WRITE_MS = 5 * 60 * 1000;
+/** How often to list/re-scan paid watches (each run is multiple KV ops). */
+const WATCH_INTERVAL_MS = 5 * 60 * 1000;
 
 export interface CronState {
   lastRunAt: string | null;
   lastSuccessAt: string | null;
   lastError: string | null;
   lastProcessedBlock: number | null;
+  /** Last time watch batch ran (throttled separately from discovery). */
+  lastWatchAt?: string | null;
   network: string;
   lastStats: CronRunStats | null;
 }
@@ -33,6 +43,7 @@ export interface CronRunStats {
   durationMs: number;
   bySource?: Record<string, number>;
   watch?: WatchRunStats;
+  watchSkipped?: boolean;
 }
 
 export interface CronRunResult {
@@ -55,6 +66,37 @@ function emptyStats(fromBlock = 0, toBlock = 0): CronRunStats {
   };
 }
 
+function shouldRunWatches(previous: CronState, nowMs: number): boolean {
+  if (!previous.lastWatchAt) return true;
+  const last = Date.parse(previous.lastWatchAt);
+  if (Number.isNaN(last)) return true;
+  return nowMs - last >= WATCH_INTERVAL_MS;
+}
+
+function shouldPersistState(
+  previous: CronState,
+  stats: CronRunStats,
+  nowMs: number,
+  fatal: boolean,
+): boolean {
+  if (fatal) return true;
+  const busy =
+    stats.discovered > 0 ||
+    stats.scanned > 0 ||
+    stats.scams > 0 ||
+    stats.suspicious > 0 ||
+    stats.errors > 0 ||
+    (stats.watch &&
+      (stats.watch.checked > 0 ||
+        stats.watch.notified > 0 ||
+        stats.watch.errors > 0));
+  if (busy) return true;
+  if (!previous.lastSuccessAt) return true;
+  const last = Date.parse(previous.lastSuccessAt);
+  if (Number.isNaN(last)) return true;
+  return nowMs - last >= QUIET_STATE_WRITE_MS;
+}
+
 export async function getCronState(env: Env): Promise<CronState> {
   const stored = (await env.SCAN_CACHE.get(CRON_STATE_KEY, "json")) as
     | CronState
@@ -66,6 +108,7 @@ export async function getCronState(env: Env): Promise<CronState> {
       lastSuccessAt: null,
       lastError: null,
       lastProcessedBlock: null,
+      lastWatchAt: null,
       network: resolveNetwork(env),
       lastStats: null,
     }
@@ -73,7 +116,7 @@ export async function getCronState(env: Env): Promise<CronState> {
 }
 
 async function saveCronState(env: Env, state: CronState): Promise<void> {
-  await env.SCAN_CACHE.put(CRON_STATE_KEY, JSON.stringify(state));
+  await kvPutBestEffort(env.SCAN_CACHE, CRON_STATE_KEY, JSON.stringify(state));
 }
 
 /**
@@ -86,14 +129,7 @@ export async function runScheduledScan(
   const started = Date.now();
   const network = resolveNetwork(env);
   const previous = await getCronState(env);
-
-  const running: CronState = {
-    ...previous,
-    lastRunAt: new Date().toISOString(),
-    network,
-    lastError: null,
-  };
-  await saveCronState(env, running);
+  const runAt = new Date().toISOString();
 
   try {
     const fromBlock = await resolveCronFromBlock(
@@ -142,29 +178,52 @@ export async function runScheduledScan(
       }
     }
 
-    // Paid watch subscriptions (separate scan budget).
-    try {
-      stats.watch = await runWatchChecks(env, ctx);
-      stats.errors += stats.watch.errors;
-    } catch (error) {
-      stats.errors += 1;
-      console.error(
-        "[cron] watch batch failed:",
-        error instanceof Error ? error.message : error,
-      );
+    let lastWatchAt = previous.lastWatchAt ?? null;
+    if (shouldRunWatches(previous, started)) {
+      try {
+        stats.watch = await runWatchChecks(env, ctx);
+        stats.errors += stats.watch.errors;
+        lastWatchAt = runAt;
+      } catch (error) {
+        stats.errors += 1;
+        console.error(
+          "[cron] watch batch failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    } else {
+      stats.watchSkipped = true;
     }
 
     stats.durationMs = Date.now() - started;
 
     const nextState: CronState = {
-      lastRunAt: running.lastRunAt,
-      lastSuccessAt: new Date().toISOString(),
+      lastRunAt: runAt,
+      lastSuccessAt: runAt,
       lastError: null,
       lastProcessedBlock: discovery.toBlock,
+      lastWatchAt,
       network,
       lastStats: stats,
     };
-    await saveCronState(env, nextState);
+
+    if (shouldPersistState(previous, stats, started, false)) {
+      await saveCronState(env, nextState);
+    }
+
+    if (stats.discovered > 0) {
+      const opsTask = notifyOpsDiscovery(env.DISCORD_OPS_WEBHOOK_URL, {
+        discovered: stats.discovered,
+        scanned: stats.scanned,
+        scams: stats.scams,
+        suspicious: stats.suspicious,
+        fromBlock: stats.fromBlock,
+        toBlock: stats.toBlock,
+        bySource: stats.bySource,
+      });
+      if (ctx) ctx.waitUntil(opsTask);
+      else await opsTask;
+    }
 
     const digestTask = notifyCronDigest(env.DISCORD_WEBHOOK_URL, {
       discovered: stats.discovered,
@@ -183,7 +242,7 @@ export async function runScheduledScan(
     }
 
     console.log(
-      `[cron] ok discovered=${stats.discovered} scanned=${stats.scanned} scams=${stats.scams} suspicious=${stats.suspicious} errors=${stats.errors} blocks=${stats.fromBlock}-${stats.toBlock} sources=${JSON.stringify(stats.bySource)} watch=${JSON.stringify(stats.watch ?? null)}`,
+      `[cron] ok discovered=${stats.discovered} scanned=${stats.scanned} scams=${stats.scams} suspicious=${stats.suspicious} errors=${stats.errors} blocks=${stats.fromBlock}-${stats.toBlock} sources=${JSON.stringify(stats.bySource)} watch=${JSON.stringify(stats.watch ?? null)} watchSkipped=${Boolean(stats.watchSkipped)}`,
     );
 
     return { ok: true, stats };
@@ -194,9 +253,11 @@ export async function runScheduledScan(
     stats.errors = 1;
 
     await saveCronState(env, {
-      ...running,
+      ...previous,
+      lastRunAt: runAt,
       lastError: message,
       lastStats: stats,
+      network,
     });
 
     console.error("[cron] fatal:", message);

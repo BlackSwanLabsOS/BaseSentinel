@@ -6,7 +6,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types",
-    "test:buyer": "node scripts/test-buyer.mjs"
+    "test:buyer": "node scripts/test-buyer.mjs",
+    "example:agent-scan": "node examples/agent-scan.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260722.1",

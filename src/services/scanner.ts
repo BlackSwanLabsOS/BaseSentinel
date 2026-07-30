@@ -15,6 +15,7 @@ import {
   type HoneypotIsFlags,
 } from "./honeypotIs";
 import { recordThreat, type RecordThreatOptions } from "./threatIntel";
+import { kvPutBestEffort } from "./kvSafe";
 import type { ListingContext, ScanDossier } from "./scanTypes";
 import {
   isValidEthereumAddress,
@@ -26,6 +27,8 @@ export type { ListingContext, ScanDossier } from "./scanTypes";
 export type { AgentVerdict };
 
 const CACHE_TTL_SECONDS = 86_400; // 24 hours
+/** Default max age when watch asks for semi-fresh cache. */
+export const WATCH_CACHE_MAX_AGE_SECONDS = 5 * 60;
 
 export interface ScanResult {
   address: string;
@@ -48,6 +51,11 @@ export interface ScanOptions {
   listing?: ListingContext;
   /** Skip SCAN_CACHE read (still writes cache). Used by watchdog re-checks. */
   bypassCache?: boolean;
+  /**
+   * If set and cache entry is older than this many seconds, treat as miss.
+   * Saves KV writes vs bypassCache while keeping watch reasonably fresh.
+   */
+  maxCacheAgeSeconds?: number;
 }
 
 function cacheKey(network: string, contractAddress: string): string {
@@ -119,36 +127,52 @@ export async function scanContract(
 
   if (cached) {
     const cachedResult = cached as ScanResult;
-    if (options.listing && !cachedResult.dossier?.listing) {
-      const merged = withVerdict({
+    const maxAge = options.maxCacheAgeSeconds;
+    if (typeof maxAge === "number" && maxAge >= 0) {
+      const cachedAtMs = Date.parse(cachedResult.cachedAt);
+      const ageSec = Number.isFinite(cachedAtMs)
+        ? (Date.now() - cachedAtMs) / 1000
+        : Number.POSITIVE_INFINITY;
+      if (ageSec > maxAge) {
+        // Stale for this caller — fall through to fresh scan.
+      } else {
+        return withVerdict({
+          ...cachedResult,
+          dossier: cachedResult.dossier ?? {
+            goplus: null,
+            honeypotIs: null,
+            listing: options.listing ?? null,
+            ageHintSeconds: null,
+            dualSourceConsensus: false,
+          },
+        });
+      }
+    } else {
+      // Cache hit: return (optionally with listing overlay). No KV put.
+      if (options.listing && !cachedResult.dossier?.listing) {
+        return withVerdict({
+          ...cachedResult,
+          dossier: {
+            goplus: cachedResult.dossier?.goplus ?? null,
+            honeypotIs: cachedResult.dossier?.honeypotIs ?? null,
+            listing: options.listing,
+            ageHintSeconds: cachedResult.dossier?.ageHintSeconds ?? null,
+            dualSourceConsensus:
+              cachedResult.dossier?.dualSourceConsensus ?? false,
+          },
+        });
+      }
+      return withVerdict({
         ...cachedResult,
-        dossier: {
-          goplus: cachedResult.dossier?.goplus ?? null,
-          honeypotIs: cachedResult.dossier?.honeypotIs ?? null,
-          listing: options.listing,
-          ageHintSeconds: cachedResult.dossier?.ageHintSeconds ?? null,
-          dualSourceConsensus:
-            cachedResult.dossier?.dualSourceConsensus ?? false,
+        dossier: cachedResult.dossier ?? {
+          goplus: null,
+          honeypotIs: null,
+          listing: options.listing ?? null,
+          ageHintSeconds: null,
+          dualSourceConsensus: false,
         },
       });
-      await env.SCAN_CACHE.put(key, JSON.stringify(merged), {
-        expirationTtl: CACHE_TTL_SECONDS,
-      });
-      if (merged.status === "SCAM" || merged.status === "SUSPICIOUS") {
-        await recordThreat(env, merged, { waitUntil: options.waitUntil });
-      }
-      return merged;
     }
-    return withVerdict({
-      ...cachedResult,
-      dossier: cachedResult.dossier ?? {
-        goplus: null,
-        honeypotIs: null,
-        listing: options.listing ?? null,
-        ageHintSeconds: null,
-        dualSourceConsensus: false,
-      },
-    });
   }
 
   const [bytecode, goplus, honeypotIs] = await Promise.all([
@@ -180,12 +204,20 @@ export async function scanContract(
     },
   });
 
-  await env.SCAN_CACHE.put(key, JSON.stringify(result), {
+  // Never fail the scan when Free KV write quota is exhausted.
+  await kvPutBestEffort(env.SCAN_CACHE, key, JSON.stringify(result), {
     expirationTtl: CACHE_TTL_SECONDS,
   });
 
   if (result.status === "SCAM" || result.status === "SUSPICIOUS") {
-    await recordThreat(env, result, { waitUntil: options.waitUntil });
+    try {
+      await recordThreat(env, result, { waitUntil: options.waitUntil });
+    } catch (error) {
+      console.error(
+        `[scan] recordThreat failed ${address}:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
   }
 
   return result;

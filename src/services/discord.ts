@@ -170,17 +170,98 @@ export interface CronDigestPayload {
   bySource?: Record<string, number>;
 }
 
-/** Cron digest: only sent when the tick found or flagged something. */
+export type OpsDiscoveryPayload = Pick<
+  CronDigestPayload,
+  "discovered" | "scanned" | "scams" | "suspicious" | "fromBlock" | "toBlock" | "bySource"
+>;
+
+/**
+ * Ops-only discovery log (separate webhook / #ops-logs).
+ * Fires on discovered > 0 — no SCAM alert styling.
+ */
+export async function notifyOpsDiscovery(
+  webhookUrl: string | undefined,
+  payload: OpsDiscoveryPayload,
+): Promise<void> {
+  if (!webhookUrl) return;
+  if (payload.discovered <= 0) return;
+
+  const sources =
+    payload.bySource && Object.keys(payload.bySource).length > 0
+      ? Object.entries(payload.bySource)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(" · ")
+      : "—";
+
+  const body = {
+    content: null,
+    embeds: [
+      {
+        title: "ops — discovery",
+        color: 0x64748b,
+        fields: [
+          {
+            name: "Discovered",
+            value: `**${payload.discovered}**`,
+            inline: true,
+          },
+          {
+            name: "Scanned",
+            value: `**${payload.scanned}**`,
+            inline: true,
+          },
+          {
+            name: "SCAM / SUS (this tick)",
+            value: `**${payload.scams}** / **${payload.suspicious}**`,
+            inline: true,
+          },
+          {
+            name: "Sources",
+            value: sources,
+            inline: false,
+          },
+          {
+            name: "Blocks",
+            value: `\`${payload.fromBlock} → ${payload.toBlock}\``,
+            inline: false,
+          },
+        ],
+        timestamp: new Date().toISOString(),
+        footer: { text: "BaseSentinel ops-logs · not a threat alert" },
+      },
+    ],
+    allowed_mentions: { parse: [] },
+  };
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      console.warn(
+        `[discord] ops discovery failed HTTP ${response.status} ${response.statusText}`,
+      );
+    }
+  } catch (error) {
+    console.warn(
+      "[discord] ops discovery error:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+/**
+ * Cron digest: only when the tick flagged threats.
+ * Routine "discovered/scanned" noise stays out of Discord (alerts use notifyDiscord).
+ */
 export async function notifyCronDigest(
   webhookUrl: string | undefined,
   digest: CronDigestPayload,
 ): Promise<void> {
   if (!webhookUrl) return;
-  if (
-    digest.discovered <= 0 &&
-    digest.scams <= 0 &&
-    digest.suspicious <= 0
-  ) {
+  if (digest.scams <= 0 && digest.suspicious <= 0) {
     return;
   }
 

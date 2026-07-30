@@ -11,6 +11,8 @@ export const ErrorCode = {
   INSUFFICIENT_USDC: "INSUFFICIENT_USDC",
   PAYMENT_INVALID: "PAYMENT_INVALID",
   UPSTREAM_TIMEOUT: "UPSTREAM_TIMEOUT",
+  /** Cloudflare KV daily write/list quota exhausted (Free tier). */
+  KV_LIMIT_EXCEEDED: "KV_LIMIT_EXCEEDED",
   INVALID_JSON: "INVALID_JSON",
   METHOD_NOT_ALLOWED: "METHOD_NOT_ALLOWED",
   NOT_FOUND: "NOT_FOUND",
@@ -48,4 +50,25 @@ export function apiErrorResponse(
 /** True when an upstream/RPC failure looks like a timeout. */
 export function isTimeoutMessage(message: string): boolean {
   return /timeout|timed out|aborted|deadline/i.test(message);
+}
+
+/** True when Cloudflare KV daily quota was hit. */
+export function isKvLimitMessage(message: string): boolean {
+  return /kv put\(\) limit|kv .*limit exceeded|limit exceeded for the day/i.test(
+    message,
+  );
+}
+
+/** Map infrastructure failures to stable error_code + HTTP status. */
+export function classifyInfraError(message: string): {
+  errorCode: ErrorCode;
+  status: number;
+} {
+  if (isKvLimitMessage(message)) {
+    return { errorCode: ErrorCode.KV_LIMIT_EXCEEDED, status: 503 };
+  }
+  if (isTimeoutMessage(message)) {
+    return { errorCode: ErrorCode.UPSTREAM_TIMEOUT, status: 502 };
+  }
+  return { errorCode: ErrorCode.UPSTREAM_TIMEOUT, status: 502 };
 }

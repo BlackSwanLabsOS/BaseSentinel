@@ -1,6 +1,7 @@
 import type { Env } from "../types";
 import { normalizeEthereumAddress } from "../utils/validation";
-import { scanContract, type ScanResult } from "./scanner";
+import { scanContract, WATCH_CACHE_MAX_AGE_SECONDS, type ScanResult } from "./scanner";
+import { kvPutBestEffort } from "./kvSafe";
 import { maxTax, type AgentVerdict } from "./verdict";
 
 export const WATCH_KEY_PREFIX = "watch:";
@@ -284,14 +285,6 @@ async function getWatchCursor(env: Env): Promise<string | null> {
   return env.SCAN_CACHE.get(WATCH_CURSOR_KEY);
 }
 
-async function setWatchCursor(env: Env, key: string | null): Promise<void> {
-  if (!key) {
-    await env.SCAN_CACHE.delete(WATCH_CURSOR_KEY);
-    return;
-  }
-  await env.SCAN_CACHE.put(WATCH_CURSOR_KEY, key);
-}
-
 function rotateKeys(keys: string[], afterKey: string | null): string[] {
   if (!keys.length) return [];
   if (!afterKey) return keys;
@@ -376,7 +369,7 @@ export async function runWatchChecks(
       if (!record) continue;
 
       const scan = await scanContract(record.target_address, env, {
-        bypassCache: true,
+        maxCacheAgeSeconds: WATCH_CACHE_MAX_AGE_SECONDS,
         waitUntil: ctx ? (p) => ctx.waitUntil(p) : undefined,
       });
       const snap = snapshotFromScan(scan);
@@ -438,7 +431,7 @@ export async function runWatchChecks(
       };
 
       const ttl = await remainingTtlSeconds(env, key, record.expires_at);
-      await env.SCAN_CACHE.put(key, JSON.stringify(updated), {
+      await kvPutBestEffort(env.SCAN_CACHE, key, JSON.stringify(updated), {
         expirationTtl: ttl,
       });
     } catch (error) {
@@ -452,7 +445,7 @@ export async function runWatchChecks(
   }
 
   if (lastProcessed) {
-    await setWatchCursor(env, lastProcessed);
+    await kvPutBestEffort(env.SCAN_CACHE, WATCH_CURSOR_KEY, lastProcessed);
   }
 
   console.log(

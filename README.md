@@ -49,6 +49,11 @@ Errors: `{ "error_code": "...", "message": "...", "error": "..." }` — branch o
 
 Settlement: **`tx_hash_proof`** (USDC transfer + hash).
 
+**Agent cookbook:** https://api.blackswanlabs.pl/docs (402 → pay → retry → branch)  
+**Example client:** [examples/agent-scan.md](examples/agent-scan.md) · `npm run example:agent-scan`
+
+Discovery is via catalogs (`/tools.json`, OpenAPI, x402) — not on-chain spam or honeypot traps.
+
 ---
 
 ## Example: scan a contract

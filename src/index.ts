@@ -32,7 +32,12 @@ import { getCronState, runScheduledScan } from "./services/cronScanner";
 import { normalizeEthereumAddress } from "./utils/validation";
 import { isMarketingHost, landingResponse } from "./landing";
 import { M2M_DOCS_MARKDOWN } from "./docs/m2mQuickstart";
-import { apiErrorBody, apiErrorResponse, ErrorCode } from "./errors";
+import {
+  apiErrorBody,
+  apiErrorResponse,
+  classifyInfraError,
+  ErrorCode,
+} from "./errors";
 import {
   createWatchSubscription,
   parseWatchCreateBody,
@@ -51,7 +56,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function upstreamErrorResponse(message: string): Response {
-  return apiErrorResponse(ErrorCode.UPSTREAM_TIMEOUT, message, 502);
+  const { errorCode, status } = classifyInfraError(message);
+  return apiErrorResponse(errorCode, message, status);
 }
 
 /**

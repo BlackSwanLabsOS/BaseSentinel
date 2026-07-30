@@ -11,3 +11,5 @@ dist/
 *.key
 credentials*.json
 .secret*
+
+tmp/

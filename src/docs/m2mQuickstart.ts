@@ -1,4 +1,4 @@
-/** Public M2M quickstart served at GET /docs. */
+/** Public M2M quickstart + agent cookbook served at GET /docs. */
 export const M2M_DOCS_MARKDOWN = `# BaseSentinel — M2M quickstart
 
 Pay-per-call threat intel on **Base** (\`eip155:8453\`). No API keys.
@@ -36,13 +36,49 @@ Settlement: transfer USDC on Base → retry with header \`X-Payment-Proof: <tx_h
 
 ---
 
-## 2-step usage (scan)
+## Agent cookbook (M2M loop)
 
-### 1) Transfer 0.005 USDC to the treasury on Base
+Machines should discover BaseSentinel via catalogs (\`/tools.json\`, OpenAPI, x402), not via unsolicited on-chain messages.
 
-### 2) Call the API
+### Loop
+
+1. **Discover** — \`GET /tools.json\` (or OpenAPI / x402 catalog).
+2. **Call** — \`GET /scan/{address}\` without payment → expect **402** + \`error_code: PAYMENT_REQUIRED\` + \`payment_info\`.
+3. **Pay** — transfer exact USDC on Base to \`payment_info.recipient\` (amount from \`payment_info\`).
+4. **Retry** — same URL with \`X-Payment-Proof: <tx_hash>\`.
+5. **Branch** on HTTP + \`error_code\` / \`verdict\`.
+
+### Branch on \`error_code\`
+
+| HTTP | error_code | Agent action |
+|------|------------|--------------|
+| 402 | \`PAYMENT_REQUIRED\` | Pay USDC, then retry with proof |
+| 400 | \`INVALID_ADDRESS_FORMAT\` | Fix address; do not retry same input |
+| 400 | \`INVALID_PROOF_FORMAT\` | Fix tx hash format |
+| 409 | \`TX_HASH_CONSUMED\` | Stop — proof already used; new payment required |
+| 409 | \`TX_HASH_BOUND_OTHER\` | Stop — proof bound to another resource |
+| 422 | \`INSUFFICIENT_USDC\` | Pay again with correct amount |
+| 422 | \`PAYMENT_INVALID\` | Fix payTo / USDC asset / network |
+| 502 | \`UPSTREAM_TIMEOUT\` | Retry after a short backoff |
+
+### Branch on \`verdict\` (200 OK)
+
+| verdict | Typical agent policy |
+|---------|----------------------|
+| \`CLEAR\` | Proceed (still use your own risk limits) |
+| \`CAUTION\` | Reduce size / require more checks |
+| \`AVOID\` | Do not buy / exit path |
+
+\`verdict_score\`: integer **0–100** (100 = clean, 0 = high risk).  
+Also read \`status\` (\`SAFE\` / \`SUSPICIOUS\` / \`SCAM\`) and \`risk_flags\` (string array).
+
+### Minimal scan (curl)
 
 \`\`\`bash
+# 1) Probe (expect 402)
+curl -s "https://api.blackswanlabs.pl/scan/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+
+# 2) After paying 0.005 USDC on Base to the treasury:
 curl -s "https://api.blackswanlabs.pl/scan/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" \\
   -H "X-Payment-Proof: 0xYOUR_TX_HASH"
 \`\`\`
@@ -54,7 +90,13 @@ curl.exe -s "https://api.blackswanlabs.pl/scan/0x833589fCD6eDb6E08f4c7C32D4f71b5
   -H "X-Payment-Proof: 0xYOUR_TX_HASH"
 \`\`\`
 
-No proof → **HTTP 402** with \`payment_info\`.
+### Load tools into an LLM agent
+
+1. \`GET https://api.blackswanlabs.pl/tools.json\`
+2. Pass \`tools\` array into your OpenAI/LangChain tool registry.
+3. Implement a thin wrapper: on tool call → ensure USDC payment → HTTP GET/POST with \`X-Payment-Proof\`.
+
+Example client (no secrets in repo): [examples/agent-scan.md](https://github.com/BlackSwanLabsOS/BaseSentinel/blob/main/examples/agent-scan.md)
 
 ---
 
@@ -66,6 +108,17 @@ curl -s -X POST "https://api.blackswanlabs.pl/watch" \\
   -H "X-Payment-Proof: 0xYOUR_TX_HASH" \\
   -d '{"target_address":"0xYourContract","webhook_url":"https://your.endpoint/hook"}'
 \`\`\`
+
+---
+
+## Discovery (where agents find us)
+
+- \`/tools.json\` — OpenAI-style function schemas
+- \`/openapi.json\` — full HTTP contract
+- \`/.well-known/x402.json\` — payment / catalog metadata
+- Ontario Protocol, Virtuals ACP, x402-list
+
+Integrate through catalogs and the payment loop above.
 
 ---
 

@@ -9,4 +9,9 @@ export interface Env {
   NETWORK: string;
   /** Optional Discord webhook for threat alerts. */
   DISCORD_WEBHOOK_URL?: string;
+  /**
+   * Optional Discord webhook for ops-only discovery logs (no SCAM noise).
+   * Create a separate channel webhook e.g. #ops-logs.
+   */
+  DISCORD_OPS_WEBHOOK_URL?: string;
 }

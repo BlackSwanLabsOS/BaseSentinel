@@ -12,7 +12,8 @@ export type DexEventKind =
   | "univ3_pool_created"
   | "clanker_token_created"
   | "virtuals_launched"
-  | "virtuals_graduated";
+  | "virtuals_graduated"
+  | "zora_coin_created";
 
 export interface DexFactorySource {
   id: string;
@@ -72,6 +73,21 @@ export const TOPIC_VIRTUALS_GRADUATED =
 export const VIRTUALS_BONDING_PROXY =
   "0xF66DeA7b3e897cD44A5a231c61B6B4423d613259";
 
+/** Zora Coins factory (Base + Base Sepolia). */
+export const ZORA_FACTORY = "0x777777751622c0d3258f214F9DF38E35BF45baF3";
+
+/**
+ * Zora CoinCreatedV4 / CreatorCoinCreated — content & creator coins (Uniswap V4).
+ * topic0 = keccak of canonical event signature (verified via pycryptodome).
+ */
+export const TOPIC_ZORA_COIN_CREATED_V4 =
+  "0x2de436107c2096e039c98bbcc3c5a2560583738ce15c234557eecb4d3221aa81";
+export const TOPIC_ZORA_CREATOR_COIN_CREATED =
+  "0x74b670d628e152daa36ca95dda7cb0002d6ea7a37b55afe4593db7abd1515781";
+/** Legacy Uniswap V3-era Zora coins. */
+export const TOPIC_ZORA_COIN_CREATED_LEGACY =
+  "0x3d1462491f7fa8396808c230d95c3fa60fd09ef59506d0b9bd1cf072d2a03f56";
+
 const BASE_FACTORIES: DexFactorySource[] = [
   {
     id: "uniswap_v2",
@@ -116,6 +132,27 @@ const BASE_FACTORIES: DexFactorySource[] = [
     kind: "virtuals_graduated",
     address: VIRTUALS_BONDING_PROXY,
     topic: TOPIC_VIRTUALS_GRADUATED,
+  },
+  {
+    id: "zora_coin_v4",
+    label: "Zora CoinCreatedV4",
+    kind: "zora_coin_created",
+    address: ZORA_FACTORY,
+    topic: TOPIC_ZORA_COIN_CREATED_V4,
+  },
+  {
+    id: "zora_creator_coin",
+    label: "Zora CreatorCoinCreated",
+    kind: "zora_coin_created",
+    address: ZORA_FACTORY,
+    topic: TOPIC_ZORA_CREATOR_COIN_CREATED,
+  },
+  {
+    id: "zora_coin_legacy",
+    label: "Zora CoinCreated (legacy)",
+    kind: "zora_coin_created",
+    address: ZORA_FACTORY,
+    topic: TOPIC_ZORA_COIN_CREATED_LEGACY,
   },
 ];
 
