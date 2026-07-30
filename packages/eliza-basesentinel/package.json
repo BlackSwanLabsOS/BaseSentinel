@@ -1,0 +1,49 @@
+{
+  "name": "@blackswanlabs/eliza-basesentinel",
+  "version": "0.1.0",
+  "description": "Eliza OS plugin: scan Base contracts via BaseSentinel (HTTP 402 + USDC tx-hash proof).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "eliza",
+    "elizaos",
+    "base",
+    "x402",
+    "threat-intel",
+    "basesentinel"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@elizaos/core": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@elizaos/core": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "viem": "^2.33.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

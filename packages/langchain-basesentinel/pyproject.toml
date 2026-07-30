@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackswanlabs-langchain-basesentinel"
+version = "0.1.0"
+description = "LangChain tool: scan Base contracts via BaseSentinel (HTTP 402 + USDC tx-hash proof)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "BlackSwan Labs" }]
+keywords = ["langchain", "base", "x402", "threat-intel", "basesentinel"]
+dependencies = [
+  "langchain-core>=0.3.0",
+  "web3>=6.0.0",
+  "httpx>=0.27.0",
+  "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+agents = [
+  "langchain>=0.3.0",
+  "langchain-openai>=0.2.0",
+  "langgraph>=0.2.0",
+]
+dev = [
+  "mypy>=1.11.0",
+  "ruff>=0.6.0",
+]
+
+[project.urls]
+Homepage = "https://blackswanlabs.pl"
+API = "https://api.blackswanlabs.pl"
+
+[tool.setuptools.packages.find]
+where = ["src"]

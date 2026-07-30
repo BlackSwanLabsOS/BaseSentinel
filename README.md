@@ -130,6 +130,16 @@ External directories (status as of 2026-07-30):
 
 Settlement for buyers of BaseSentinel remains: send USDC on Base → retry with `X-Payment-Proof: <tx_hash>`.
 
+### Eliza OS plugin (local package)
+
+Agent integration lives in [`packages/eliza-basesentinel`](packages/eliza-basesentinel) (`@blackswanlabs/eliza-basesentinel`).  
+Action `SCAN_CONTRACT` pays 0.005 USDC under the hood and returns a short verdict string to the LLM. See that package README — **not published to npm yet**.
+
+### LangChain tool (local package)
+
+Python tool lives in [`packages/langchain-basesentinel`](packages/langchain-basesentinel) (`blackswanlabs-langchain-basesentinel`).  
+`BaseSentinelScanTool` auto-pays on Base and returns a risk summary (or `BASESENTINEL_ERROR …` without crashing the agent). **Not on PyPI yet.**
+
 ---
 
 ## Contact
