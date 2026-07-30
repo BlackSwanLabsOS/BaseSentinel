@@ -37,16 +37,24 @@ export interface EthLog {
   logIndex?: string;
 }
 
-/** Default public Base RPCs for discovery / non-payment reads. */
-const DEFAULT_LOGS_RPC_BY_NETWORK: Record<NetworkId, string> = {
-  base: "https://mainnet.base.org",
-  "base-sepolia": "https://sepolia.base.org",
-};
+/** Public Base discovery pool (round-robin on 429 / timeout / usage limits). */
+const DEFAULT_BASE_LOGS_POOL = [
+  "https://base.meowrpc.com",
+  "https://base-mainnet.public.blastapi.io",
+  "https://base.gateway.tenderly.co",
+  "https://mainnet.base.org",
+  "https://1rpc.io/base",
+] as const;
+
+const DEFAULT_SEPOLIA_LOGS_POOL = ["https://sepolia.base.org"] as const;
 
 /** Alchemy Free Base eth_getLogs max range. */
 const ALCHEMY_LOGS_CHUNK_BLOCKS = 10;
-/** Public / dedicated logs RPC — larger spans (probe-verified on mainnet.base.org). */
+/** Public / dedicated logs RPC — larger spans. */
 const LOGS_RPC_CHUNK_BLOCKS = 2000;
+
+/** Sticky index so successful endpoints stay preferred across calls. */
+let logsRpcCursor = 0;
 
 function trimKey(key: string): string {
   return key.trim();
@@ -54,6 +62,42 @@ function trimKey(key: string): string {
 
 function looksLikeAlchemyUrl(url: string): boolean {
   return /alchemy\.com/i.test(url);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableLogsError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    /\b429\b/.test(msg) ||
+    /\b520\b|\b521\b|\b522\b|\b523\b|\b524\b|\b525\b|\b526\b|\b530\b/.test(msg) ||
+    /-32016\b/.test(msg) ||
+    /rate limit/i.test(msg) ||
+    /usage limit/i.test(msg) ||
+    /too many requests/i.test(msg) ||
+    /capacity/i.test(msg) ||
+    /quota/i.test(msg) ||
+    /upgrade here/i.test(msg) ||
+    /error code:\s*52\d/i.test(msg) ||
+    /timeout/i.test(msg) ||
+    /timed out/i.test(msg) ||
+    /Failed to reach RPC/i.test(msg) ||
+    /\b502\b/.test(msg) ||
+    /\b503\b/.test(msg) ||
+    /\b504\b/.test(msg) ||
+    /HTTP 5\d\d/i.test(msg) ||
+    /ECONNRESET|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(msg)
+  );
+}
+
+function isRangeOrPayloadError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (isRetryableLogsError(error)) return false;
+  return /block range|query returned more than|response size|too large|log response size|exceeds max/i.test(
+    msg,
+  );
 }
 
 async function postRpc<T>(
@@ -110,14 +154,19 @@ async function postRpc<T>(
   return data.result as T;
 }
 
-function resolveCriticalRpcUrl(env: Env): { url: string; headers: Record<string, string> } {
+function resolveCriticalRpcUrl(env: Env): {
+  url: string;
+  headers: Record<string, string>;
+} {
   const network = resolveNetwork(env);
   const override = env.CRITICAL_RPC_URL?.trim();
   if (override) {
     return { url: override, headers: {} };
   }
   if (!env.ALCHEMY_API_KEY) {
-    throw new Error("ALCHEMY_API_KEY or CRITICAL_RPC_URL is required for payment RPC");
+    throw new Error(
+      "ALCHEMY_API_KEY or CRITICAL_RPC_URL is required for payment RPC",
+    );
   }
   const apiKey = trimKey(env.ALCHEMY_API_KEY);
   return {
@@ -126,11 +175,32 @@ function resolveCriticalRpcUrl(env: Env): { url: string; headers: Record<string,
   };
 }
 
-function resolveLogsRpcUrl(env: Env): string {
+/**
+ * Build logs RPC pool.
+ * `LOGS_RPC_URL` may be a single URL or comma-separated list (tried first),
+ * then remaining public defaults are appended for failover.
+ */
+export function resolveLogsRpcPool(env: Env): string[] {
   const network = resolveNetwork(env);
+  const defaults =
+    network === "base"
+      ? [...DEFAULT_BASE_LOGS_POOL]
+      : [...DEFAULT_SEPOLIA_LOGS_POOL];
+
   const override = env.LOGS_RPC_URL?.trim();
-  if (override) return override;
-  return DEFAULT_LOGS_RPC_BY_NETWORK[network];
+  if (!override) {
+    return defaults;
+  }
+
+  const preferred = override
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (preferred.length === 0) {
+    return defaults;
+  }
+
+  return [...new Set([...preferred, ...defaults])];
 }
 
 /**
@@ -147,15 +217,47 @@ export async function criticalRpc<T>(
 }
 
 /**
- * Discovery / scan reads: LOGS_RPC_URL (default public Base).
- * Keeps mass eth_getLogs + bytecode off Alchemy CU.
+ * Discovery / scan reads via public RPC pool with round-robin failover.
+ * On 429 / timeout / 5xx: short backoff, then next endpoint.
  */
 export async function logsRpc<T>(
   env: Env,
   method: string,
   params: unknown[],
 ): Promise<T> {
-  return postRpc<T>(resolveLogsRpcUrl(env), method, params);
+  const pool = resolveLogsRpcPool(env);
+  if (pool.length === 0) {
+    throw new Error("No LOGS RPC endpoints configured");
+  }
+
+  const start = ((logsRpcCursor % pool.length) + pool.length) % pool.length;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < pool.length; attempt++) {
+    const idx = (start + attempt) % pool.length;
+    const url = pool[idx];
+    try {
+      const result = await postRpc<T>(url, method, params);
+      logsRpcCursor = idx;
+      return result;
+    } catch (error) {
+      lastError = error;
+      const retryable = isRetryableLogsError(error);
+      const moreLeft = attempt < pool.length - 1;
+      if (!retryable || !moreLeft) {
+        break;
+      }
+      const waitMs = 1000 + attempt * 500;
+      console.warn(
+        `[logsRpc] ${method} failed on ${url} (${error instanceof Error ? error.message.slice(0, 120) : error}); rotating in ${waitMs}ms`,
+      );
+      await sleep(waitMs);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError ?? "logsRpc failed"));
 }
 
 /** @deprecated Prefer criticalRpc / logsRpc. Alias → criticalRpc. */
@@ -209,12 +311,15 @@ function toHexBlock(block: number): string {
 }
 
 function logsChunkSize(env: Env): number {
-  const url = resolveLogsRpcUrl(env);
-  return looksLikeAlchemyUrl(url) ? ALCHEMY_LOGS_CHUNK_BLOCKS : LOGS_RPC_CHUNK_BLOCKS;
+  const pool = resolveLogsRpcPool(env);
+  if (pool.some((url) => looksLikeAlchemyUrl(url))) {
+    return ALCHEMY_LOGS_CHUNK_BLOCKS;
+  }
+  return LOGS_RPC_CHUNK_BLOCKS;
 }
 
 /**
- * Mass discovery eth_getLogs via LOGS_RPC (large chunks on public nodes).
+ * Mass discovery eth_getLogs via LOGS RPC pool (large chunks on public nodes).
  */
 export async function getLogs(
   env: Env,
@@ -267,11 +372,23 @@ async function fetchLogsChunk(
     ]);
     return chunk ?? [];
   } catch (error) {
-    // Adaptive split when public node rejects span / payload size.
-    if (to > from && chunkSize > 50) {
+    // Adaptive split only for range/payload errors — not for 429 (pool already rotated).
+    if (to > from && chunkSize > 50 && isRangeOrPayloadError(error)) {
       const mid = Math.floor((from + to) / 2);
-      const left = await fetchLogsChunk(env, filter, from, mid, Math.floor(chunkSize / 2));
-      const right = await fetchLogsChunk(env, filter, mid + 1, to, Math.floor(chunkSize / 2));
+      const left = await fetchLogsChunk(
+        env,
+        filter,
+        from,
+        mid,
+        Math.floor(chunkSize / 2),
+      );
+      const right = await fetchLogsChunk(
+        env,
+        filter,
+        mid + 1,
+        to,
+        Math.floor(chunkSize / 2),
+      );
       return [...left, ...right];
     }
     throw error;

@@ -2,8 +2,9 @@ export interface Env {
   SCAN_CACHE: KVNamespace;
   ALCHEMY_API_KEY: string;
   /**
-   * Optional dedicated RPC for mass eth_getLogs / discovery reads.
-   * Default: https://mainnet.base.org (or Sepolia public).
+   * Optional discovery RPC override: one URL or comma-separated pool
+   * (tried first, then built-in public Base failover list).
+   * Example: "https://mainnet.base.org,https://1rpc.io/base"
    */
   LOGS_RPC_URL?: string;
   /**
