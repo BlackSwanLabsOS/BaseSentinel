@@ -488,7 +488,9 @@ export default {
           bindingKey: address,
           resourceUrl: request.url,
         });
-        const result = await buildPremiumDossier(address, env);
+        const result = await buildPremiumDossier(address, env, {
+          bypassCache: isAdminAuthorized(request, env),
+        });
         return withCors(
           jsonResponse({
             ...result,
@@ -558,7 +560,9 @@ export default {
           bindingKey: address,
           resourceUrl: request.url,
         });
-        const result = await scanContract(address, env);
+        const result = await scanContract(address, env, {
+          bypassCache: isAdminAuthorized(request, env),
+        });
         return withCors(
           jsonResponse({
             ...result,

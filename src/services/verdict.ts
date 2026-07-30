@@ -3,6 +3,8 @@
  * `verdict_score`: 100 = clean, 0 = high risk.
  */
 
+import { shouldIgnoreGoPlusPriorHoneypot } from "../config/aaInfrastructure";
+
 export type AgentVerdict = "CLEAR" | "CAUTION" | "AVOID";
 
 export interface VerdictInput {
@@ -23,7 +25,10 @@ export interface VerdictInput {
     canTakeBackOwnership?: boolean | null;
     isBlacklisted?: boolean | null;
     honeypotWithSameCreator?: boolean | null;
+    creatorAddress?: string | null;
   } | null;
+  /** Discovery source when known (e.g. zora_coin_v4). */
+  listingSource?: string | null;
   honeypotIs?: {
     isHoneypot?: boolean | null;
     buyTax?: number | null;
@@ -85,10 +90,15 @@ export function collectRiskFlags(input: VerdictInput): string[] {
   if (goplus?.isOpenSource === false || honeypotIs?.openSource === false) {
     flags.add("UNVERIFIED_SOURCE");
   }
+
+  const listing = (input.listingSource || "").toLowerCase();
+  const zoraLike = listing.startsWith("zora");
+  // Zora / minimal proxies are normal — don't flag proxy alone there.
   if (
-    goplus?.isProxy === true ||
-    honeypotIs?.isProxy === true ||
-    honeypotIs?.hasProxyCalls === true
+    !zoraLike &&
+    (goplus?.isProxy === true ||
+      honeypotIs?.isProxy === true ||
+      honeypotIs?.hasProxyCalls === true)
   ) {
     flags.add("PROXY_RISK");
   }
@@ -99,12 +109,23 @@ export function collectRiskFlags(input: VerdictInput): string[] {
     flags.add("CAN_TAKE_BACK_OWNERSHIP");
   }
   if (goplus?.isBlacklisted === true) flags.add("TOKEN_BLACKLIST_FEATURE");
-  if (goplus?.honeypotWithSameCreator === true) {
+  if (
+    goplus?.honeypotWithSameCreator === true &&
+    !shouldIgnoreGoPlusPriorHoneypot({
+      creatorAddress: goplus.creatorAddress,
+      honeypotWithSameCreator: true,
+      listingSource: input.listingSource,
+    })
+  ) {
     flags.add("DEPLOYER_PRIOR_HONEYPOT");
   }
 
   const joined = reasons.join(" ").toLowerCase();
-  if (joined.includes("empty contract") || joined.includes("no bytecode")) {
+  if (
+    joined.includes("empty_contract") ||
+    joined.includes("empty_or_eoa") ||
+    joined.includes("no bytecode")
+  ) {
     flags.add("EMPTY_OR_MINIMAL_BYTECODE");
   }
   if (joined.includes("blacklist") || joined.includes("antibot")) {
@@ -113,7 +134,10 @@ export function collectRiskFlags(input: VerdictInput): string[] {
   if (joined.includes("trading") && joined.includes("gate")) {
     flags.add("TRADING_GATE");
   }
-  if (joined.includes("proxy")) flags.add("PROXY_RISK");
+  // Only real upgrade-surface wording — not every "proxy" mention / Zora coin.
+  if (joined.includes("proxy_upgrade_surface") && !zoraLike) {
+    flags.add("PROXY_RISK");
+  }
 
   if (
     typeof input.deployerBalancePct === "number" &&
@@ -143,6 +167,7 @@ export function buildVerdict(input: VerdictInput): VerdictResult {
   let verdict_score = clamp(100 - Math.round(input.riskScore), 0, 100);
 
   // Hard AVOID: force score into the AVOID band.
+  // Empty/EOA and proxy-alone are caution — not automatic AVOID.
   const tax = maxTax(input.goplus, input.honeypotIs);
   const hardAvoid =
     risk_flags.includes("HONEYPOT") ||
@@ -150,7 +175,6 @@ export function buildVerdict(input: VerdictInput): VerdictResult {
     risk_flags.includes("DUAL_SOURCE_HONEYPOT") ||
     risk_flags.includes("EXTREME_TAX") ||
     risk_flags.includes("HIGH_TAX") ||
-    risk_flags.includes("EMPTY_OR_MINIMAL_BYTECODE") ||
     risk_flags.includes("DEPLOYER_PRIOR_HONEYPOT") ||
     (typeof tax === "number" && tax > 10) ||
     input.status === "SCAM";
@@ -161,6 +185,8 @@ export function buildVerdict(input: VerdictInput): VerdictResult {
     risk_flags.includes("UNVERIFIED_SOURCE") ||
     risk_flags.includes("MODERATE_TAX") ||
     risk_flags.includes("PROXY_RISK") ||
+    risk_flags.includes("EMPTY_OR_MINIMAL_BYTECODE") ||
+    risk_flags.includes("TRADING_GATE") ||
     risk_flags.includes("DEPLOYER_HOLDS_SUPPLY") ||
     risk_flags.includes("HIGH_HOLDER_CONCENTRATION") ||
     input.status === "SUSPICIOUS"

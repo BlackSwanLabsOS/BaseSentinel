@@ -4,17 +4,25 @@ import {
   discoverRecentTokens,
   resolveCronFromBlock,
 } from "./pairDiscovery";
-import { scanContract } from "./scanner";
+import {
+  peekScanCache,
+  scanContract,
+  scanResultAgeSeconds,
+} from "./scanner";
 import { notifyCronDigest, notifyOpsDiscovery } from "./discord";
 import { runWatchChecks, type WatchRunStats } from "./watchList";
 import { kvPutBestEffort } from "./kvSafe";
 
 const CRON_STATE_KEY = "cron:state";
-/** Max full contract scans per cron tick. */
+/** Max *fresh* contract scans per cron tick (cache hits do not count). */
 const MAX_SCANS_PER_RUN = 10;
 /**
- * On quiet ticks, persist cron cursor at most this often.
- * Free KV allows ~1000 writes/day — a put every minute alone exceeds that.
+ * Rediscovered tokens fresher than this are skipped so the budget goes to
+ * never-seen / stale launches.
+ */
+const CRON_CACHE_FRESH_SECONDS = 6 * 60 * 60;
+/**
+ * On quiet ticks, persist cron cursor at most this often (KV write thrift).
  */
 const QUIET_STATE_WRITE_MS = 5 * 60 * 1000;
 /** How often to list/re-scan paid watches (each run is multiple KV ops). */
@@ -153,8 +161,19 @@ export async function runScheduledScan(
       }
 
       try {
+        const cached = await peekScanCache(env, token.address);
+        if (
+          cached &&
+          scanResultAgeSeconds(cached) <= CRON_CACHE_FRESH_SECONDS
+        ) {
+          // Fresh cache — do not burn a scan slot (burst launches stay covered).
+          stats.skippedCachedOrLimit += 1;
+          continue;
+        }
+
         const result = await scanContract(token.address, env, {
           waitUntil: ctx ? (p) => ctx.waitUntil(p) : undefined,
+          maxCacheAgeSeconds: CRON_CACHE_FRESH_SECONDS,
           listing: {
             source: token.source,
             pair: token.pair,

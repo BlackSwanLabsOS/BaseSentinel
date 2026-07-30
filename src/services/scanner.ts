@@ -66,6 +66,24 @@ function cacheKey(network: string, contractAddress: string): string {
   return `contract:${network}:${contractAddress}`;
 }
 
+/** Read scan cache without running enrichment (cron budget / dedupe). */
+export async function peekScanCache(
+  env: Env,
+  contractAddress: string,
+): Promise<ScanResult | null> {
+  const address = normalizeEthereumAddress(contractAddress);
+  if (!address || !isValidEthereumAddress(address)) return null;
+  const network = resolveNetwork(env);
+  const cached = await env.SCAN_CACHE.get(cacheKey(network, address), "json");
+  return cached ? (cached as ScanResult) : null;
+}
+
+export function scanResultAgeSeconds(result: ScanResult): number {
+  const cachedAtMs = Date.parse(result.cachedAt);
+  if (!Number.isFinite(cachedAtMs)) return Number.POSITIVE_INFINITY;
+  return (Date.now() - cachedAtMs) / 1000;
+}
+
 function toPublicGoPlus(
   flags: GoPlusTokenFlags | null,
 ): ScanDossier["goplus"] {
@@ -93,6 +111,7 @@ function withVerdict(
     goplus: result.dossier?.goplus ?? null,
     honeypotIs: result.dossier?.honeypotIs ?? null,
     dualSourceConsensus: result.dossier?.dualSourceConsensus ?? false,
+    listingSource: result.dossier?.listing?.source ?? null,
   });
   return {
     ...result,
@@ -215,7 +234,12 @@ export async function scanContract(
   ]);
 
   const local = analyzeBytecode(bytecode);
-  const analysis = enrichAnalysis(local, goplus, honeypotIs);
+  const analysis = enrichAnalysis(
+    local,
+    goplus,
+    honeypotIs,
+    options.listing?.source ?? null,
+  );
   const dualSourceConsensus = analysis.reasons.includes(
     "DualSource_Honeypot_Consensus",
   );

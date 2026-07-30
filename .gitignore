@@ -16,3 +16,5 @@ tmp/
 .x402-list.local
 
 .wrangler-dry/
+
+.wrangler-bundle-check/

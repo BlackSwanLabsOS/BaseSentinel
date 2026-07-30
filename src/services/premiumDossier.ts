@@ -20,8 +20,11 @@ export interface DossierResult {
 export async function buildPremiumDossier(
   contractAddress: string,
   env: Env,
+  options: { bypassCache?: boolean } = {},
 ): Promise<DossierResult> {
-  const security = await scanContract(contractAddress, env);
+  const security = await scanContract(contractAddress, env, {
+    bypassCache: options.bypassCache,
+  });
   const market_structure = await analyzeMarketStructure(env, security);
 
   // Recompute verdict with concentration flags included.
@@ -32,6 +35,7 @@ export async function buildPremiumDossier(
     goplus: security.dossier.goplus,
     honeypotIs: security.dossier.honeypotIs,
     dualSourceConsensus: security.dossier.dualSourceConsensus,
+    listingSource: security.dossier.listing?.source ?? null,
     deployerBalancePct: market_structure.deployer_balance_pct,
     top5HoldersPct: market_structure.top_5_holders_pct,
   });

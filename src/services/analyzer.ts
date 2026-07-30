@@ -1,3 +1,4 @@
+import { shouldIgnoreGoPlusPriorHoneypot } from "../config/aaInfrastructure";
 import type { NetworkId } from "../config/network";
 import {
   fetchGoPlusTokenSecurity,
@@ -148,11 +149,8 @@ export function analyzeBytecode(bytecode: string): AnalysisResult {
   const codeHex = raw.toLowerCase().replace(/^0x/, "");
 
   if (!codeHex || codeHex === "0" || codeHex.length < MIN_BYTECODE_HEX_LENGTH) {
-    return {
-      status: "SCAM",
-      riskScore: 100,
-      reasons: ["Empty_Contract"],
-    };
+    // EOA / not-yet-deployed — not a token honeypot. Stay below SCAM band.
+    return finalize(["Empty_Or_EOA_No_Bytecode"], 55);
   }
 
   const isToken = looksLikeErc20Token(codeHex);
@@ -168,9 +166,10 @@ export function analyzeBytecode(bytecode: string): AnalysisResult {
   }
 
   const tradingGates = countPush4Selectors(codeHex, TRADING_GATE_SELECTORS);
+  // Common on legit memes before openTrading — soft alone, harsh with blacklist.
   if (tradingGates > 0) {
     reasons.push("Trading_Gate_Detected");
-    riskScore += 15 + Math.min(tradingGates - 1, 2) * 8;
+    riskScore += 8 + Math.min(tradingGates - 1, 2) * 4;
   }
 
   const blacklistHits = countPush4Selectors(codeHex, BLACKLIST_SELECTORS);
@@ -193,7 +192,7 @@ export function analyzeBytecode(bytecode: string): AnalysisResult {
 
   if (isToken && hasPush4Selector(codeHex, "40c10f19") && tradingGates > 0) {
     reasons.push("Owner_Mint_With_Trading_Gate");
-    riskScore += 25;
+    riskScore += 12;
   }
 
   if (isToken && tradingGates > 0 && blacklistHits > 0) {
@@ -226,10 +225,12 @@ export function analyzeBytecode(bytecode: string): AnalysisResult {
 /**
  * Merges GoPlus flags into a local bytecode analysis result.
  * Critical GoPlus signals force SCAM / riskScore 100.
+ * @param listingSource Optional discovery source (e.g. zora_coin_v4) for FP softens.
  */
 export function mergeGoPlusEnrichment(
   local: AnalysisResult,
   goplus: GoPlusTokenFlags | null,
+  listingSource?: string | null,
 ): AnalysisResult {
   if (!goplus || !goplus.rawAvailable) {
     return local;
@@ -294,8 +295,21 @@ export function mergeGoPlusEnrichment(
   }
 
   if (goplus.honeypotWithSameCreator) {
-    reasons.push("GoPlus: Creator linked to prior honeypot");
-    riskScore = Math.max(riskScore, 85);
+    if (
+      shouldIgnoreGoPlusPriorHoneypot({
+        creatorAddress: goplus.creatorAddress,
+        honeypotWithSameCreator: true,
+        listingSource,
+      })
+    ) {
+      // GoPlus often sets creator=bundler (tx.from) for AA/Zora launches.
+      reasons.push(
+        "GoPlus: Creator prior-honeypot ignored (AA/bundler misattribution)",
+      );
+    } else {
+      reasons.push("GoPlus: Creator linked to prior honeypot");
+      riskScore = Math.max(riskScore, 85);
+    }
   }
 
   if (goplus.isOpenSource === false) {
@@ -418,7 +432,7 @@ export async function analyzeContract(
 ): Promise<AnalysisResult> {
   const local = analyzeBytecode(bytecode);
 
-  if (local.reasons.includes("Empty_Contract")) {
+  if (isEmptyOrEoaAnalysis(local)) {
     return local;
   }
 
@@ -433,12 +447,19 @@ export function enrichAnalysis(
   local: AnalysisResult,
   goplus: GoPlusTokenFlags | null,
   honeypot: HoneypotIsFlags | null,
+  listingSource?: string | null,
 ): AnalysisResult {
-  if (local.reasons.includes("Empty_Contract")) {
+  if (isEmptyOrEoaAnalysis(local)) {
     return local;
   }
 
-  const withGoPlus = mergeGoPlusEnrichment(local, goplus);
+  const withGoPlus = mergeGoPlusEnrichment(local, goplus, listingSource);
   const withHoneypot = mergeHoneypotIsEnrichment(withGoPlus, honeypot);
   return applyExternalHoneypotConsensus(withHoneypot, goplus, honeypot);
+}
+
+function isEmptyOrEoaAnalysis(local: AnalysisResult): boolean {
+  return local.reasons.some(
+    (r) => r === "Empty_Contract" || r === "Empty_Or_EOA_No_Bytecode",
+  );
 }
