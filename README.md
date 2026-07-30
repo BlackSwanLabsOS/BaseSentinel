@@ -6,6 +6,20 @@ Pay per call with **USDC** — no API keys.
 **Live API:** https://api.blackswanlabs.pl  
 **Landing:** https://blackswanlabs.pl
 
+### Detection (what `/scan` returns)
+
+Dual-source consensus: **local bytecode heuristics** + **GoPlus** + **honeypot.is** buy/sell simulation.
+
+| Field | Values |
+|-------|--------|
+| `status` | `SAFE` / `SUSPICIOUS` / `SCAM` |
+| `verdict` | `CLEAR` / `CAUTION` / `AVOID` (agent policy) |
+| `verdict_score` | 0–100 (100 = clean) |
+
+Also: `risk_flags`, `reasons`, enrichment dossier. Continuous coverage of Uniswap V2/V3, Aerodrome, Clanker, and Virtuals bonding launches (cron + cache).
+
+**False-positive softens (live):** empty / EOA addresses → `SUSPICIOUS` + `CAUTION` (not hard `SCAM`/`AVOID`); GoPlus `honeypot_with_same_creator` ignored when the attributed “creator” is known ERC-4337 EntryPoint / Base AA bundler infra (common Zora mislabel); trading-gate-only and empty-proxy paths are less harsh than full honeypot toolkits.
+
 ---
 
 ## How payment works (2 steps)
