@@ -9,7 +9,7 @@ Payment is **M2M under the hood** (USDC transfer on Base → `X-Payment-Proof`).
 ```bash
 # from this repo (local path) until published to npm:
 npm install ../path/to/BaseSentinel/packages/eliza-basesentinel
-# or after npm publish:
+# after npm org publish:
 # npm install @blackswanlabs/eliza-basesentinel
 ```
 

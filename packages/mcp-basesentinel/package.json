@@ -1,8 +1,11 @@
 {
-  "name": "@blackswanlabs/eliza-basesentinel",
+  "name": "@blackswanlabs/mcp-basesentinel",
   "version": "1.0.0",
-  "description": "Eliza OS plugin: scan Base contracts via BaseSentinel (HTTP 402 + USDC tx-hash proof).",
+  "description": "MCP server: scan Base contracts via BaseSentinel (HTTP 402 + USDC tx-hash proof).",
   "type": "module",
+  "bin": {
+    "mcp-basesentinel": "./dist/index.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,6 +20,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "npm run build"
   },
@@ -26,7 +30,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BlackSwanLabsOS/BaseSentinel.git",
-    "directory": "packages/eliza-basesentinel"
+    "directory": "packages/mcp-basesentinel"
   },
   "homepage": "https://blackswanlabs.pl",
   "bugs": {
@@ -34,24 +38,17 @@
   },
   "author": "BlackSwan Labs",
   "keywords": [
-    "eliza",
-    "elizaos",
+    "mcp",
+    "model-context-protocol",
     "base",
     "x402",
-    "threat-intel",
     "basesentinel"
   ],
   "license": "MIT",
-  "peerDependencies": {
-    "@elizaos/core": ">=1.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@elizaos/core": {
-      "optional": true
-    }
-  },
   "dependencies": {
-    "viem": "^2.33.0"
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "viem": "^2.33.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
