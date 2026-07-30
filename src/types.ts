@@ -1,6 +1,16 @@
 export interface Env {
   SCAN_CACHE: KVNamespace;
   ALCHEMY_API_KEY: string;
+  /**
+   * Optional dedicated RPC for mass eth_getLogs / discovery reads.
+   * Default: https://mainnet.base.org (or Sepolia public).
+   */
+  LOGS_RPC_URL?: string;
+  /**
+   * Optional override for payment/critical RPC.
+   * Default: Alchemy via ALCHEMY_API_KEY (no public fallback).
+   */
+  CRITICAL_RPC_URL?: string;
   /** Treasury wallet receiving USDC payments. */
   PAYMENT_ADDRESS: string;
   /** Admin key for diagnostics + payment smoke bypass (`X-Admin-Key` / `X-Admin-Secret`). */

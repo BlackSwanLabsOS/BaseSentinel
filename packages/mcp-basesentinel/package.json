@@ -1,10 +1,10 @@
 {
-  "name": "@blackswanlabs/mcp-basesentinel",
+  "name": "@basesentinel/mcp",
   "version": "1.0.0",
   "description": "MCP server: scan Base contracts via BaseSentinel (HTTP 402 + USDC tx-hash proof).",
   "type": "module",
   "bin": {
-    "mcp-basesentinel": "./dist/index.js"
+    "basesentinel-mcp": "./bin/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,6 +15,7 @@
     }
   },
   "files": [
+    "bin",
     "dist",
     "README.md"
   ],

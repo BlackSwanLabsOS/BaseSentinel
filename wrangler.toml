@@ -7,6 +7,8 @@ workers_dev = true
 [vars]
 PAYMENT_ADDRESS = "0x21360A04853b85a8d2E918b73f97C8ccf5939946"
 NETWORK = "base"
+# Discovery / eth_getLogs — public Base (keeps Alchemy CU for payments).
+LOGS_RPC_URL = "https://mainnet.base.org"
 
 [[kv_namespaces]]
 binding = "SCAN_CACHE"

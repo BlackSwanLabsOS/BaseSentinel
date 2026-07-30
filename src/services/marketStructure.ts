@@ -1,6 +1,6 @@
 import type { Env } from "../types";
 import { resolveNetwork } from "../config/network";
-import { alchemyRpc } from "./alchemy";
+import { logsRpc } from "./alchemy";
 import type { GoPlusTokenFlags, GoPlusHolderRow } from "./goplus";
 import type { HoneypotIsFlags } from "./honeypotIs";
 import type { ScanResult } from "./scanner";
@@ -49,7 +49,7 @@ async function ethCall(
   data: string,
 ): Promise<string | null> {
   try {
-    return await alchemyRpc<string>(env, "eth_call", [
+    return await logsRpc<string>(env, "eth_call", [
       { to, data },
       "latest",
     ]);

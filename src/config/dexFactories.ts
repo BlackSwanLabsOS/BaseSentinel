@@ -23,6 +23,11 @@ export interface DexFactorySource {
   address: string;
   /** Event topic0. */
   topic: string;
+  /**
+   * When false, skipped by discovery (no eth_getLogs).
+   * Toggle after `npm run analyze:factories -- --hours=24`.
+   */
+  enabled: boolean;
 }
 
 /** Uniswap V2 PairCreated(address,address,address,uint256) */
@@ -88,6 +93,11 @@ export const TOPIC_ZORA_CREATOR_COIN_CREATED =
 export const TOPIC_ZORA_COIN_CREATED_LEGACY =
   "0x3d1462491f7fa8396808c230d95c3fa60fd09ef59506d0b9bd1cf072d2a03f56";
 
+/**
+ * Base discovery sources.
+ * 24h probe (2026-07-30, mainnet.base.org): disable only proven-dead legacy Zora.
+ * Aerodrome / Virtuals stayed enabled despite 0 events — re-check topic / narrativ later.
+ */
 const BASE_FACTORIES: DexFactorySource[] = [
   {
     id: "uniswap_v2",
@@ -95,6 +105,7 @@ const BASE_FACTORIES: DexFactorySource[] = [
     kind: "univ2_pair_created",
     address: "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
     topic: TOPIC_UNIV2_PAIR_CREATED,
+    enabled: true,
   },
   {
     id: "aerodrome",
@@ -102,6 +113,7 @@ const BASE_FACTORIES: DexFactorySource[] = [
     kind: "aero_pool_created",
     address: "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
     topic: TOPIC_AERO_POOL_CREATED,
+    enabled: true,
   },
   {
     id: "uniswap_v3",
@@ -111,6 +123,7 @@ const BASE_FACTORIES: DexFactorySource[] = [
     // Observed on Base factory logs (same layout as PoolCreated; topic differs from ETH mainnet hash).
     topic:
       "0x783cca1c0412dd0d695e784568c96da2e9c22ff989357a2e8b1d9b2b4e6b7118",
+    enabled: true,
   },
   {
     id: "clanker_v4",
@@ -118,6 +131,7 @@ const BASE_FACTORIES: DexFactorySource[] = [
     kind: "clanker_token_created",
     address: "0xE85A59c628F7d27878ACeB4bf3b35733630083a9",
     topic: TOPIC_CLANKER_TOKEN_CREATED,
+    enabled: true,
   },
   {
     id: "virtuals_launched",
@@ -125,6 +139,7 @@ const BASE_FACTORIES: DexFactorySource[] = [
     kind: "virtuals_launched",
     address: VIRTUALS_BONDING_PROXY,
     topic: TOPIC_VIRTUALS_LAUNCHED,
+    enabled: true,
   },
   {
     id: "virtuals_graduated",
@@ -132,6 +147,7 @@ const BASE_FACTORIES: DexFactorySource[] = [
     kind: "virtuals_graduated",
     address: VIRTUALS_BONDING_PROXY,
     topic: TOPIC_VIRTUALS_GRADUATED,
+    enabled: true,
   },
   {
     id: "zora_coin_v4",
@@ -139,6 +155,7 @@ const BASE_FACTORIES: DexFactorySource[] = [
     kind: "zora_coin_created",
     address: ZORA_FACTORY,
     topic: TOPIC_ZORA_COIN_CREATED_V4,
+    enabled: true,
   },
   {
     id: "zora_creator_coin",
@@ -146,6 +163,7 @@ const BASE_FACTORIES: DexFactorySource[] = [
     kind: "zora_coin_created",
     address: ZORA_FACTORY,
     topic: TOPIC_ZORA_CREATOR_COIN_CREATED,
+    enabled: true, // 13 events / 24h — keep
   },
   {
     id: "zora_coin_legacy",
@@ -153,6 +171,7 @@ const BASE_FACTORIES: DexFactorySource[] = [
     kind: "zora_coin_created",
     address: ZORA_FACTORY,
     topic: TOPIC_ZORA_COIN_CREATED_LEGACY,
+    enabled: false, // 0 events / 24h — dead topic burn
   },
 ];
 
@@ -164,11 +183,18 @@ const SEPOLIA_FACTORIES: DexFactorySource[] = [
     kind: "univ2_pair_created",
     address: "0x7Ae58f10f7849cA6F5fB71b7f45CB416c9204b1e",
     topic: TOPIC_UNIV2_PAIR_CREATED,
+    enabled: true,
   },
 ];
 
-export function getDexFactories(network: NetworkId): DexFactorySource[] {
+/** All configured factories (including disabled) — for admin / analyze tooling. */
+export function listAllDexFactories(network: NetworkId): DexFactorySource[] {
   return network === "base" ? BASE_FACTORIES : SEPOLIA_FACTORIES;
+}
+
+/** Active discovery sources only. */
+export function getDexFactories(network: NetworkId): DexFactorySource[] {
+  return listAllDexFactories(network).filter((f) => f.enabled);
 }
 
 /** Legacy UniV2 factory address helper — prefer getDexFactories(). */

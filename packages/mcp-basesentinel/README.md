@@ -1,10 +1,18 @@
-# @blackswanlabs/mcp-basesentinel
+# @basesentinel/mcp
 
 MCP (Model Context Protocol) server for [BaseSentinel](https://api.blackswanlabs.pl).
 
 Exposes tool **`scan_contract`**. Payment (0.005 USDC on Base → `X-Payment-Proof`) stays in the runtime — the model only sees a risk summary.
 
-## Install / build
+## Install
+
+```bash
+npm install -g @basesentinel/mcp
+# or one-shot:
+npx @basesentinel/mcp
+```
+
+Local build from this repo:
 
 ```bash
 cd packages/mcp-basesentinel
@@ -14,14 +22,12 @@ npm run build
 
 ## Cursor / Claude Desktop (stdio)
 
-Example MCP config entry:
-
 ```json
 {
   "mcpServers": {
     "basesentinel": {
-      "command": "node",
-      "args": ["C:/Users/CAD-CAM/BaseSentinel/packages/mcp-basesentinel/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@basesentinel/mcp"],
       "env": {
         "BASESENTINEL_PRIVATE_KEY": "0xYOUR_BASE_WALLET_KEY",
         "BASESENTINEL_RPC_URL": "https://mainnet.base.org"
@@ -51,9 +57,3 @@ On failure returns `BASESENTINEL_ERROR error_code=…` (stable API codes).
 | `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
 
 \*Unless payment-proof override is set.
-
-Not published to npm yet — use the local path above. After org publish:
-
-```bash
-npm install @blackswanlabs/mcp-basesentinel
-```

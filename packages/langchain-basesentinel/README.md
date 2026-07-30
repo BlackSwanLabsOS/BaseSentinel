@@ -9,6 +9,7 @@ Payment is **M2M under the hood** (USDC transfer on Base → `X-Payment-Proof`).
 ## Install
 
 ```bash
+# from this repo (PyPI name will be basesentinel-langchain):
 cd packages/langchain-basesentinel
 python -m pip install -e .
 # optional ReAct example deps:

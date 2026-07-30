@@ -93,10 +93,10 @@ server.registerTool(
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[mcp-basesentinel] ready on stdio");
+  console.error("[@basesentinel/mcp] ready on stdio");
 }
 
 main().catch((error) => {
-  console.error("[mcp-basesentinel] fatal:", error);
+  console.error("[@basesentinel/mcp] fatal:", error);
   process.exit(1);
 });

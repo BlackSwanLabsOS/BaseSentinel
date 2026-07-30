@@ -1,5 +1,5 @@
 {
-  "name": "@blackswanlabs/eliza-basesentinel",
+  "name": "@basesentinel/eliza",
   "version": "1.0.0",
   "description": "Eliza OS plugin: scan Base contracts via BaseSentinel (HTTP 402 + USDC tx-hash proof).",
   "type": "module",

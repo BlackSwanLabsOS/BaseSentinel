@@ -1,16 +1,13 @@
-# @blackswanlabs/eliza-basesentinel
+# @basesentinel/eliza
 
 Eliza OS plugin that lets an agent **scan Base contracts** via [BaseSentinel](https://api.blackswanlabs.pl).
 
 Payment is **M2M under the hood** (USDC transfer on Base → `X-Payment-Proof`). The LLM only sees a short risk summary.
 
-## Install (in an Eliza agent project)
+## Install
 
 ```bash
-# from this repo (local path) until published to npm:
-npm install ../path/to/BaseSentinel/packages/eliza-basesentinel
-# after npm org publish:
-# npm install @blackswanlabs/eliza-basesentinel
+npm install @basesentinel/eliza
 ```
 
 Peer: `@elizaos/core` (optional at build time; required at agent runtime).
@@ -19,7 +16,7 @@ Peer: `@elizaos/core` (optional at build time; required at agent runtime).
 
 ```ts
 import { AgentRuntime } from "@elizaos/core";
-import baseSentinelPlugin from "@blackswanlabs/eliza-basesentinel";
+import baseSentinelPlugin from "@basesentinel/eliza";
 
 const runtime = new AgentRuntime({
   // ...character, models
@@ -64,7 +61,7 @@ import {
   payForScan,
   scanContract,
   summarizeScanResult,
-} from "@blackswanlabs/eliza-basesentinel";
+} from "@basesentinel/eliza";
 
 const { txHash } = await payForScan({
   contractAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",

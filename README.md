@@ -130,19 +130,20 @@ External directories (status as of 2026-07-30):
 
 Settlement for buyers of BaseSentinel remains: send USDC on Base → retry with `X-Payment-Proof: <tx_hash>`.
 
-### Eliza OS plugin (local package)
+### Eliza OS plugin
 
-Agent integration lives in [`packages/eliza-basesentinel`](packages/eliza-basesentinel) (`@blackswanlabs/eliza-basesentinel`).  
-Action `SCAN_CONTRACT` pays 0.005 USDC under the hood and returns a short verdict string to the LLM. See that package README — **not published to npm yet**.
+[`packages/eliza-basesentinel`](packages/eliza-basesentinel) → **`@basesentinel/eliza`**.  
+Action `SCAN_CONTRACT` pays 0.005 USDC under the hood and returns a short verdict string to the LLM.
 
-### LangChain tool (local package)
+### LangChain tool
 
-Python tool lives in [`packages/langchain-basesentinel`](packages/langchain-basesentinel) (`blackswanlabs-langchain-basesentinel`).  
-`BaseSentinelScanTool` auto-pays on Base and returns a risk summary (or `BASESENTINEL_ERROR …` without crashing the agent). **Not on PyPI yet.**
+[`packages/langchain-basesentinel`](packages/langchain-basesentinel) → **`basesentinel-langchain`** (PyPI later).  
+`BaseSentinelScanTool` auto-pays on Base and returns a risk summary (or `BASESENTINEL_ERROR …` without crashing the agent).
 
-### MCP server (local package)
+### MCP server
 
-[`packages/mcp-basesentinel`](packages/mcp-basesentinel) (`@blackswanlabs/mcp-basesentinel`) — stdio MCP tool `scan_contract` for Cursor / Claude Desktop / agent hosts. **Not on npm yet.**
+[`packages/mcp-basesentinel`](packages/mcp-basesentinel) → **`@basesentinel/mcp`**.  
+Stdio tool `scan_contract` — `npx @basesentinel/mcp`.
 
 ---
 

@@ -235,7 +235,7 @@ async function handleDailyFeedRequest(
     return withCors(
       apiErrorResponse(
         ErrorCode.INVALID_JSON,
-        "Invalid date. Use YYYY-MM-DD (UTC).",
+        "Invalid date. Use a real UTC calendar day YYYY-MM-DD (not in the future).",
         400,
       ),
     );
@@ -403,7 +403,7 @@ export default {
       if (!isValidFeedDate(dateParam)) {
         return apiErrorResponse(
           ErrorCode.INVALID_JSON,
-          "Invalid date. Use YYYY-MM-DD (UTC).",
+          "Invalid date. Use a real UTC calendar day YYYY-MM-DD (not in the future).",
           400,
         );
       }

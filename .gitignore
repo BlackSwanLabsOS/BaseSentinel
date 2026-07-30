@@ -13,3 +13,4 @@ credentials*.json
 .secret*
 
 tmp/
+.x402-list.local

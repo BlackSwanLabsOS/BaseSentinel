@@ -1,16 +1,16 @@
 import type { Env } from "../types";
-import { getAlchemyRpcBase, resolveNetwork } from "../config/network";
+import { getAlchemyRpcBase, resolveNetwork, type NetworkId } from "../config/network";
 
-interface AlchemyRpcErrorBody {
+interface RpcErrorBody {
   code?: number;
   message?: string;
 }
 
-interface AlchemyRpcResponse<T> {
+interface RpcResponse<T> {
   jsonrpc?: string;
   id?: number;
   result?: T;
-  error?: AlchemyRpcErrorBody;
+  error?: RpcErrorBody;
 }
 
 export interface TransactionReceiptLog {
@@ -28,17 +28,32 @@ export interface TransactionReceipt {
   blockNumber?: string;
 }
 
-/** Public Base RPCs as fallback when Alchemy rejects a call (e.g. eth_getLogs limits). */
-const PUBLIC_RPC_BY_NETWORK = {
+export interface EthLog {
+  address: string;
+  topics: string[];
+  data: string;
+  blockNumber: string;
+  transactionHash: string;
+  logIndex?: string;
+}
+
+/** Default public Base RPCs for discovery / non-payment reads. */
+const DEFAULT_LOGS_RPC_BY_NETWORK: Record<NetworkId, string> = {
   base: "https://mainnet.base.org",
   "base-sepolia": "https://sepolia.base.org",
-} as const;
+};
 
-/** eth_getLogs chunk size (Alchemy-safe range). */
-const GET_LOGS_CHUNK_BLOCKS = 10;
+/** Alchemy Free Base eth_getLogs max range. */
+const ALCHEMY_LOGS_CHUNK_BLOCKS = 10;
+/** Public / dedicated logs RPC — larger spans (probe-verified on mainnet.base.org). */
+const LOGS_RPC_CHUNK_BLOCKS = 2000;
 
 function trimKey(key: string): string {
   return key.trim();
+}
+
+function looksLikeAlchemyUrl(url: string): boolean {
+  return /alchemy\.com/i.test(url);
 }
 
 async function postRpc<T>(
@@ -68,9 +83,9 @@ async function postRpc<T>(
   }
 
   const rawText = await response.text();
-  let data: AlchemyRpcResponse<T> | null = null;
+  let data: RpcResponse<T> | null = null;
   try {
-    data = JSON.parse(rawText) as AlchemyRpcResponse<T>;
+    data = JSON.parse(rawText) as RpcResponse<T>;
   } catch {
     // keep raw text for error
   }
@@ -95,52 +110,72 @@ async function postRpc<T>(
   return data.result as T;
 }
 
+function resolveCriticalRpcUrl(env: Env): { url: string; headers: Record<string, string> } {
+  const network = resolveNetwork(env);
+  const override = env.CRITICAL_RPC_URL?.trim();
+  if (override) {
+    return { url: override, headers: {} };
+  }
+  if (!env.ALCHEMY_API_KEY) {
+    throw new Error("ALCHEMY_API_KEY or CRITICAL_RPC_URL is required for payment RPC");
+  }
+  const apiKey = trimKey(env.ALCHEMY_API_KEY);
+  return {
+    url: `${getAlchemyRpcBase(network)}/${apiKey}`,
+    headers: { Authorization: `Bearer ${apiKey}` },
+  };
+}
+
+function resolveLogsRpcUrl(env: Env): string {
+  const network = resolveNetwork(env);
+  const override = env.LOGS_RPC_URL?.trim();
+  if (override) return override;
+  return DEFAULT_LOGS_RPC_BY_NETWORK[network];
+}
+
 /**
- * Low-level JSON-RPC call: Alchemy first, public Base RPC fallback on failure.
+ * Critical path only: payment proof / receipts.
+ * Uses CRITICAL_RPC_URL or Alchemy — no public fallback (x402 must stay deterministic).
  */
+export async function criticalRpc<T>(
+  env: Env,
+  method: string,
+  params: unknown[],
+): Promise<T> {
+  const { url, headers } = resolveCriticalRpcUrl(env);
+  return postRpc<T>(url, method, params, headers);
+}
+
+/**
+ * Discovery / scan reads: LOGS_RPC_URL (default public Base).
+ * Keeps mass eth_getLogs + bytecode off Alchemy CU.
+ */
+export async function logsRpc<T>(
+  env: Env,
+  method: string,
+  params: unknown[],
+): Promise<T> {
+  return postRpc<T>(resolveLogsRpcUrl(env), method, params);
+}
+
+/** @deprecated Prefer criticalRpc / logsRpc. Alias → criticalRpc. */
 export async function alchemyRpc<T>(
   env: Env,
   method: string,
   params: unknown[],
 ): Promise<T> {
-  if (!env.ALCHEMY_API_KEY) {
-    throw new Error("ALCHEMY_API_KEY is not configured");
-  }
-
-  const network = resolveNetwork(env);
-  const apiKey = trimKey(env.ALCHEMY_API_KEY);
-  const alchemyUrl = `${getAlchemyRpcBase(network)}/${apiKey}`;
-  const publicUrl = PUBLIC_RPC_BY_NETWORK[network];
-
-  try {
-    // Prefer URL-key style (classic). Also send Bearer for newer alch_ keys.
-    return await postRpc<T>(alchemyUrl, method, params, {
-      Authorization: `Bearer ${apiKey}`,
-    });
-  } catch (alchemyError) {
-    try {
-      return await postRpc<T>(publicUrl, method, params);
-    } catch {
-      const message =
-        alchemyError instanceof Error ? alchemyError.message : String(alchemyError);
-      throw new Error(message);
-    }
-  }
+  return criticalRpc(env, method, params);
 }
 
-/**
- * Fetches raw contract bytecode via Alchemy JSON-RPC for the configured network.
- */
 export async function getContractBytecode(
   contractAddress: string,
   env: Env,
 ): Promise<string> {
-  const bytecode = await alchemyRpc<string | null>(env, "eth_getCode", [
+  const bytecode = await logsRpc<string | null>(env, "eth_getCode", [
     contractAddress,
     "latest",
   ]);
 
-  // Empty accounts return "0x" — analyzer classifies these as Empty_Contract.
   if (!bytecode || bytecode === "0x0") {
     return "0x";
   }
@@ -149,14 +184,13 @@ export async function getContractBytecode(
 }
 
 /**
- * Fetches a transaction receipt for the configured network.
- * Returns null when the transaction is unknown / not yet mined.
+ * Payment settlement: Alchemy / CRITICAL_RPC only.
  */
 export async function getTransactionReceipt(
   txHash: string,
   env: Env,
 ): Promise<TransactionReceipt | null> {
-  const receipt = await alchemyRpc<TransactionReceipt | null>(
+  const receipt = await criticalRpc<TransactionReceipt | null>(
     env,
     "eth_getTransactionReceipt",
     [txHash],
@@ -166,25 +200,21 @@ export async function getTransactionReceipt(
 }
 
 export async function getLatestBlockNumber(env: Env): Promise<number> {
-  const hex = await alchemyRpc<string>(env, "eth_blockNumber", []);
+  const hex = await logsRpc<string>(env, "eth_blockNumber", []);
   return Number.parseInt(hex, 16);
-}
-
-export interface EthLog {
-  address: string;
-  topics: string[];
-  data: string;
-  blockNumber: string;
-  transactionHash: string;
-  logIndex?: string;
 }
 
 function toHexBlock(block: number): string {
   return `0x${Math.max(0, block).toString(16)}`;
 }
 
+function logsChunkSize(env: Env): number {
+  const url = resolveLogsRpcUrl(env);
+  return looksLikeAlchemyUrl(url) ? ALCHEMY_LOGS_CHUNK_BLOCKS : LOGS_RPC_CHUNK_BLOCKS;
+}
+
 /**
- * eth_getLogs in small chunks — avoids Alchemy HTTP 400 on large block ranges.
+ * Mass discovery eth_getLogs via LOGS_RPC (large chunks on public nodes).
  */
 export async function getLogs(
   env: Env,
@@ -202,22 +232,48 @@ export async function getLogs(
     return [];
   }
 
+  const chunkSize = logsChunkSize(env);
   const all: EthLog[] = [];
 
-  for (let start = from; start <= to; start += GET_LOGS_CHUNK_BLOCKS) {
-    const end = Math.min(to, start + GET_LOGS_CHUNK_BLOCKS - 1);
-    const chunk = await alchemyRpc<EthLog[]>(env, "eth_getLogs", [
-      {
-        address: filter.address,
-        topics: filter.topics,
-        fromBlock: toHexBlock(start),
-        toBlock: toHexBlock(end),
-      },
-    ]);
-    if (chunk?.length) {
+  for (let start = from; start <= to; start += chunkSize) {
+    const end = Math.min(to, start + chunkSize - 1);
+    const chunk = await fetchLogsChunk(env, filter, start, end, chunkSize);
+    if (chunk.length) {
       all.push(...chunk);
     }
   }
 
   return all;
+}
+
+async function fetchLogsChunk(
+  env: Env,
+  filter: {
+    address: string;
+    topics: Array<string | null>;
+  },
+  from: number,
+  to: number,
+  chunkSize: number,
+): Promise<EthLog[]> {
+  try {
+    const chunk = await logsRpc<EthLog[]>(env, "eth_getLogs", [
+      {
+        address: filter.address,
+        topics: filter.topics,
+        fromBlock: toHexBlock(from),
+        toBlock: toHexBlock(to),
+      },
+    ]);
+    return chunk ?? [];
+  } catch (error) {
+    // Adaptive split when public node rejects span / payload size.
+    if (to > from && chunkSize > 50) {
+      const mid = Math.floor((from + to) / 2);
+      const left = await fetchLogsChunk(env, filter, from, mid, Math.floor(chunkSize / 2));
+      const right = await fetchLogsChunk(env, filter, mid + 1, to, Math.floor(chunkSize / 2));
+      return [...left, ...right];
+    }
+    throw error;
+  }
 }

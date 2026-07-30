@@ -71,8 +71,29 @@ export function utcDateString(date = new Date()): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * True for a real calendar UTC day YYYY-MM-DD, not in the future.
+ * Rejects 2026-13-40-style garbage before any payment challenge.
+ */
 export function isValidFeedDate(date: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return false;
+  }
+  const [y, m, d] = date.split("-").map((part) => Number(part));
+  if (!y || !m || !d) return false;
+  const parsed = new Date(Date.UTC(y, m - 1, d));
+  if (
+    parsed.getUTCFullYear() !== y ||
+    parsed.getUTCMonth() !== m - 1 ||
+    parsed.getUTCDate() !== d
+  ) {
+    return false;
+  }
+  // No paying for a future UTC day that cannot have a feed yet.
+  if (date > utcDateString()) {
+    return false;
+  }
+  return true;
 }
 
 function severityRank(status: AnalysisStatus): number {

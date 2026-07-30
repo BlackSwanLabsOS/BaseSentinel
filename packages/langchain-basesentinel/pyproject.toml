@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "blackswanlabs-langchain-basesentinel"
+name = "basesentinel-langchain"
 version = "0.1.0"
 description = "LangChain tool: scan Base contracts via BaseSentinel (HTTP 402 + USDC tx-hash proof)."
 readme = "README.md"
