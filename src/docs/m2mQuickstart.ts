@@ -32,7 +32,9 @@ USDC (Base): \`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\`
 | Daily feed | \`GET /api/feed/daily/YYYY-MM-DD\` | **0.01 USDC** |
 | Live stream | \`GET /stream/threats\` | **0.005 USDC** / UTC day |
 
-Settlement: transfer USDC on Base → retry with header \`X-Payment-Proof: <tx_hash>\`.
+**Settlement (required):** on-chain **USDC Transfer** on Base → retry with \`X-Payment-Proof: <tx_hash>\` (\`settlement: tx_hash_proof\`).
+
+**Not supported:** Coinbase x402 facilitator settle, EIP-3009 \`transferWithAuthorization\`, or Base64 \`PAYMENT-SIGNATURE\` payment payloads. Those clients will not unlock paid endpoints.
 
 ---
 
@@ -43,9 +45,9 @@ Machines should discover BaseSentinel via catalogs (\`/tools.json\`, OpenAPI, x4
 ### Loop
 
 1. **Discover** — \`GET /tools.json\` (or OpenAPI / x402 catalog).
-2. **Call** — \`GET /scan/{address}\` without payment → expect **402** + \`error_code: PAYMENT_REQUIRED\` + \`payment_info\`.
-3. **Pay** — transfer exact USDC on Base to \`payment_info.recipient\` (amount from \`payment_info\`).
-4. **Retry** — same URL with \`X-Payment-Proof: <tx_hash>\`.
+2. **Call** — \`GET /scan/{address}\` without payment → expect **402** + \`error_code: PAYMENT_REQUIRED\` + \`payment_info\` (\`settlement: tx_hash_proof\`, \`facilitator: false\`).
+3. **Pay** — \`Transfer\` exact USDC on Base to \`payment_info.recipient\` (amount from \`payment_info\`). Do **not** use a Coinbase facilitator.
+4. **Retry** — same URL with \`X-Payment-Proof: <tx_hash>\` of that transfer.
 5. **Branch** on HTTP + \`error_code\` / \`verdict\`.
 
 ### Branch on \`error_code\`
@@ -124,7 +126,7 @@ curl -s -X POST "https://api.blackswanlabs.pl/watch" \\
 - Ontario Protocol — listed (\`ready\`, paid); integrity pending (tx-hash settle, not facilitator)
 - Virtuals ACP — BaseSentinel agent registered
 - x402-list — submitted, awaiting manual approval (probe OK)
-- Coinbase Bazaar — not fully indexable until facilitator settle; we stay on \`tx_hash_proof\`
+- Coinbase Bazaar — not fully indexable: we intentionally do **not** use facilitator settle (\`tx_hash_proof\` only)
 
 Integrate through catalogs and the payment loop above.
 

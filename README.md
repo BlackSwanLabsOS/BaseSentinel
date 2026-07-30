@@ -10,12 +10,14 @@ Pay per call with **USDC** — no API keys.
 
 ## How payment works (2 steps)
 
-1. Send USDC on **Base** to the treasury wallet (exact product amount).
+1. Send a **USDC Transfer** on **Base** to the treasury wallet (exact product amount).
 2. Call the endpoint with header:
 
 ```http
 X-Payment-Proof: 0xYOUR_TX_HASH
 ```
+
+Settlement is **`tx_hash_proof` only** — not Coinbase facilitator / EIP-3009 / Base64 `PAYMENT-SIGNATURE` payloads.
 
 The tx-hash is bound to the resource (e.g. contract address). Reuse on another address is rejected. Same hash cannot be replayed for a new paid call (KV anti-replay).
 
@@ -130,20 +132,15 @@ External directories (status as of 2026-07-30):
 
 Settlement for buyers of BaseSentinel remains: send USDC on Base → retry with `X-Payment-Proof: <tx_hash>`.
 
-### Eliza OS plugin
+### Agent SDKs (published)
 
-[`packages/eliza-basesentinel`](packages/eliza-basesentinel) → **`@basesentinel/eliza`**.  
-Action `SCAN_CONTRACT` pays 0.005 USDC under the hood and returns a short verdict string to the LLM.
+| Package | Install | What it does |
+|---------|---------|--------------|
+| [MCP](packages/mcp-basesentinel) | `npx -y @basesentinel/mcp` / `npm i @basesentinel/mcp` | Stdio MCP tool `scan_contract` (Cursor / Claude Desktop) |
+| [Eliza OS](packages/eliza-basesentinel) | `npm i @basesentinel/eliza` | Plugin action `SCAN_CONTRACT` |
+| [LangChain](packages/langchain-basesentinel) | `pip install basesentinel-langchain` | `BaseSentinelScanTool` for Python agents |
 
-### LangChain tool
-
-[`packages/langchain-basesentinel`](packages/langchain-basesentinel) → **`basesentinel-langchain`** (PyPI later).  
-`BaseSentinelScanTool` auto-pays on Base and returns a risk summary (or `BASESENTINEL_ERROR …` without crashing the agent).
-
-### MCP server
-
-[`packages/mcp-basesentinel`](packages/mcp-basesentinel) → **`@basesentinel/mcp`**.  
-Stdio tool `scan_contract` — `npx @basesentinel/mcp`.
+All three SDKs auto-pay **0.005 USDC** on Base (or use `BASESENTINEL_PAYMENT_PROOF` for smoke). See each package README for env vars.
 
 ---
 

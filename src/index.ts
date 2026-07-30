@@ -84,16 +84,31 @@ function extractRawAddress(
   return null;
 }
 
-function isDiscoveryPath(pathname: string): boolean {
-  return (
-    pathname === "/.well-known/ai-plugin.json" ||
-    pathname === "/.well-known/x402.json" ||
-    pathname === "/openapi.json" ||
-    pathname === "/stream/threats" ||
-    pathname === "/watch" ||
+/**
+ * Browser / playground clients send OPTIONS before GET/POST with
+ * X-Payment-Proof. Must cover paid paths too (/scan, /dossier, …),
+ * not only discovery manifests.
+ */
+function allowsCorsPreflight(pathname: string): boolean {
+  if (
+    pathname === "/" ||
+    pathname === "/health" ||
     pathname === "/docs" ||
-    pathname === "/tools.json"
-  );
+    pathname === "/docs/" ||
+    pathname === "/openapi.json" ||
+    pathname === "/tools.json" ||
+    pathname === "/watch" ||
+    pathname === "/stream/threats" ||
+    pathname === "/.well-known/ai-plugin.json" ||
+    pathname === "/.well-known/x402.json"
+  ) {
+    return true;
+  }
+  if (pathname === "/scan" || pathname.startsWith("/scan/")) return true;
+  if (pathname === "/dossier" || pathname.startsWith("/dossier/")) return true;
+  if (pathname.startsWith("/api/feed/daily")) return true;
+  if (pathname.startsWith("/api/admin/")) return true;
+  return false;
 }
 
 async function handleWatchRequest(
@@ -285,7 +300,7 @@ export default {
       return landingResponse();
     }
 
-    if (request.method === "OPTIONS" && isDiscoveryPath(url.pathname)) {
+    if (request.method === "OPTIONS" && allowsCorsPreflight(url.pathname)) {
       return corsPreflightResponse();
     }
 
@@ -352,20 +367,22 @@ export default {
         ? Date.now() - Date.parse(cron.lastSuccessAt)
         : null;
 
-      return jsonResponse({
-        status: "ok",
-        service: "base-sentinel",
-        timestamp: new Date().toISOString(),
-        cron: {
-          ...cron,
-          healthy:
-            Boolean(cron.lastSuccessAt) &&
-            !cron.lastError &&
-            staleMs !== null &&
-            staleMs < 15 * 60 * 1000,
-          staleMs,
-        },
-      });
+      return withCors(
+        jsonResponse({
+          status: "ok",
+          service: "base-sentinel",
+          timestamp: new Date().toISOString(),
+          cron: {
+            ...cron,
+            healthy:
+              Boolean(cron.lastSuccessAt) &&
+              !cron.lastError &&
+              staleMs !== null &&
+              staleMs < 15 * 60 * 1000,
+            staleMs,
+          },
+        }),
+      );
     }
 
     if (url.pathname === "/api/admin/cron-status") {

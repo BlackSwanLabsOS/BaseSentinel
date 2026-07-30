@@ -667,9 +667,12 @@ export function buildX402WellKnown(origin: string, env: Env) {
     network: caip2,
     payTo: env.PAYMENT_ADDRESS,
     asset: usdc,
-    /** Settlement: USDC transfer on Base + X-Payment-Proof tx hash. */
+    /** Settlement: USDC Transfer on Base + X-Payment-Proof tx hash. */
     settlement: "tx_hash_proof",
     proofHeader: "X-Payment-Proof",
+    facilitator: false,
+    settlement_note:
+      "Send a USDC Transfer on Base to payTo, then retry with X-Payment-Proof=<tx_hash>. Coinbase facilitator / EIP-3009 PAYMENT-SIGNATURE payloads are not accepted.",
     generated_at: now,
     updated_at: now,
     openapi: `${origin}/openapi.json`,

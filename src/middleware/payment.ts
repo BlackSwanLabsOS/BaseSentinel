@@ -128,6 +128,9 @@ export interface PaymentInfo {
   asset: string;
   proof_header: string;
   scheme: "exact";
+  /** Always tx-hash proof — not Coinbase facilitator / EIP-3009. */
+  settlement: "tx_hash_proof";
+  facilitator: false;
 }
 
 export interface EnforcePaymentOptions {
@@ -241,6 +244,8 @@ function buildPaymentInfo(
     asset: "USDC",
     proof_header: PAYMENT_PROOF_HEADER,
     scheme: "exact",
+    settlement: "tx_hash_proof",
+    facilitator: false,
   };
 }
 
@@ -415,7 +420,8 @@ function buildX402PaymentRequired(
 
   return {
     x402Version: 2,
-    error: "PAYMENT-SIGNATURE or X-Payment-Proof header is required",
+    error:
+      "X-Payment-Proof (USDC Transfer tx hash) is required. Coinbase facilitator / EIP-3009 PAYMENT-SIGNATURE payloads are not accepted.",
     resource: {
       url: resourceUrl,
       description: product.description,
@@ -443,6 +449,8 @@ function buildX402PaymentRequired(
         binding: `one_tx_hash_per_${product.bindingLabel.replace(/\s+/g, "_")}`,
         humanNetwork: info.network,
         settlement: "tx_hash_proof",
+        facilitator: false,
+        note: "Pay with an on-chain USDC Transfer to payTo, then send that tx hash in X-Payment-Proof. Do not use Coinbase facilitator settlement.",
       },
     },
   };
@@ -489,7 +497,7 @@ export function build402Response(
             : "https://basesentinel.local/scan/{address}");
   const x402 = buildX402PaymentRequired(env, resource, product);
 
-  const message = `Pay ${product.amountDisplay} on-chain, then retry with X-Payment-Proof set to the transaction hash.`;
+  const message = `Pay ${product.amountDisplay} via USDC Transfer on Base to the treasury, then retry with X-Payment-Proof set to that transaction hash. Coinbase facilitator / EIP-3009 signed PAYMENT-SIGNATURE payloads are not accepted.`;
   const body = {
     error_code: ErrorCode.PAYMENT_REQUIRED,
     error: "Payment Required",
