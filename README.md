@@ -143,7 +143,7 @@ External directories (status as of 2026-07-30):
 |-----------|--------|--------|
 | [Ontario Protocol](https://ontarioprotocol.com/discover) | **Listed** (`ready`, paid listing) | Scan @ `0.005 USDC`. Integrity still “pending” because buyers settle with our **tx-hash proof**, not Coinbase facilitator / EIP-3009. |
 | [Virtuals ACP](https://app.virtuals.io/acp/agent/019faeb2-bed1-7699-9aa0-6899796a223d) | **Agent registered** | BaseSentinel offerings point at `api.blackswanlabs.pl`. |
-| [x402-list](https://x402-list.com/) | **Submitted — awaiting manual approval** | Probe accepted 3 endpoints; not in the public directory API yet. |
+| [x402-list](https://x402-list.com/) | **Resubmitted — awaiting review** | First submit rejected; resubmitted after **$0.50** anti-spam fee on Base. Probe previously accepted 3 endpoints; still not in the public directory API until approval. |
 | Coinbase x402 Bazaar | **Blocked on settlement model** | Validate/readiness can pass; full Bazaar indexing expects facilitator settle. We intentionally settle via **`tx_hash_proof`** (`X-Payment-Proof`), so we do not complete that payment path. |
 
 Settlement for buyers of BaseSentinel remains: send USDC on Base → retry with `X-Payment-Proof: <tx_hash>`.
