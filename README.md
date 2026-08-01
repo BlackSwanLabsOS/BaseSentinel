@@ -142,8 +142,6 @@ External directories:
 | [Ontario Protocol](https://ontarioprotocol.com/discover) | **Listed** | Scan @ `0.005 USDC` |
 | [Virtuals ACP](https://app.virtuals.io/acp/agent/019faeb2-bed1-7699-9aa0-6899796a223d) | **Agent registered** | Offerings point at `api.blackswanlabs.pl` |
 | [x402-list](https://x402-list.com/) | **Submitted — awaiting approval** | — |
-| [Remote OpenClaw](https://www.remoteopenclaw.com/mcp) | **Listed** | MCP directory |
-
 ### Agent SDKs (published)
 
 | Package | Install | What it does |
@@ -161,6 +159,8 @@ All three SDKs auto-pay **0.005 USDC** on Base when the runtime wallet key is se
 | `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
 
 Details and install examples: each package README under `packages/`.
+
+Listed in the [Remote OpenClaw MCP directory](https://www.remoteopenclaw.com/mcp)
 
 ---
 
