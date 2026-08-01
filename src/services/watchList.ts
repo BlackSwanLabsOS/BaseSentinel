@@ -370,6 +370,7 @@ export async function runWatchChecks(
 
       const scan = await scanContract(record.target_address, env, {
         maxCacheAgeSeconds: WATCH_CACHE_MAX_AGE_SECONDS,
+        // Watch re-checks run from cron — keep public logs RPC to spare Alchemy CU.
         waitUntil: ctx ? (p) => ctx.waitUntil(p) : undefined,
       });
       const snap = snapshotFromScan(scan);

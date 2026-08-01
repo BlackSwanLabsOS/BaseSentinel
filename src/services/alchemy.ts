@@ -267,6 +267,24 @@ export async function logsRpc<T>(
     : new Error(String(lastError ?? "logsRpc failed"));
 }
 
+/**
+ * Which RPC lane to use for light reads (getCode / eth_call).
+ * - `logs`: public pool (cron / discovery) — spare Alchemy CU
+ * - `critical`: Alchemy / CRITICAL_RPC (paid /scan + /dossier)
+ */
+export type LightRpcTier = "logs" | "critical";
+
+export async function lightRpc<T>(
+  env: Env,
+  tier: LightRpcTier,
+  method: string,
+  params: unknown[],
+): Promise<T> {
+  return tier === "critical"
+    ? criticalRpc<T>(env, method, params)
+    : logsRpc<T>(env, method, params);
+}
+
 /** @deprecated Prefer criticalRpc / logsRpc. Alias → criticalRpc. */
 export async function alchemyRpc<T>(
   env: Env,
@@ -279,8 +297,9 @@ export async function alchemyRpc<T>(
 export async function getContractBytecode(
   contractAddress: string,
   env: Env,
+  tier: LightRpcTier = "logs",
 ): Promise<string> {
-  const bytecode = await logsRpc<string | null>(env, "eth_getCode", [
+  const bytecode = await lightRpc<string | null>(env, tier, "eth_getCode", [
     contractAddress,
     "latest",
   ]);

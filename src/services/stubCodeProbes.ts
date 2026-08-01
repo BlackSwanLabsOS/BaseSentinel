@@ -1,5 +1,5 @@
 import type { Env } from "../types";
-import { logsRpc } from "./alchemy";
+import { lightRpc, type LightRpcTier } from "./alchemy";
 import {
   MIN_BYTECODE_HEX_LENGTH,
   RISK_SCAM,
@@ -62,9 +62,13 @@ async function ethCall(
   env: Env,
   to: string,
   data: string,
+  tier: LightRpcTier,
 ): Promise<string | null> {
   try {
-    return await logsRpc<string>(env, "eth_call", [{ to, data }, "latest"]);
+    return await lightRpc<string>(env, tier, "eth_call", [
+      { to, data },
+      "latest",
+    ]);
   } catch {
     return null;
   }
@@ -79,6 +83,7 @@ export async function probeStubAndAdminSurface(
   env: Env,
   contractAddress: string,
   bytecode: string,
+  tier: LightRpcTier = "logs",
 ): Promise<StubAdminProbeResult | null> {
   const minimalBytecode = isMinimalBytecode(bytecode);
   const reservedEofPrefix = hasReservedEofPrefix(bytecode);
@@ -89,12 +94,12 @@ export async function probeStubAndAdminSurface(
   const address = contractAddress.toLowerCase();
   const [nameRaw, symbolRaw, supplyRaw, pauseRaw, operatorRaw, pausedRaw] =
     await Promise.all([
-      ethCall(env, address, SEL.name),
-      ethCall(env, address, SEL.symbol),
-      ethCall(env, address, SEL.totalSupply),
-      ethCall(env, address, SEL.pauseRole),
-      ethCall(env, address, SEL.operatorRole),
-      ethCall(env, address, SEL.isPaused0),
+      ethCall(env, address, SEL.name, tier),
+      ethCall(env, address, SEL.symbol, tier),
+      ethCall(env, address, SEL.totalSupply, tier),
+      ethCall(env, address, SEL.pauseRole, tier),
+      ethCall(env, address, SEL.operatorRole, tier),
+      ethCall(env, address, SEL.isPaused0, tier),
     ]);
 
   const nameOk = callSucceeded(nameRaw);

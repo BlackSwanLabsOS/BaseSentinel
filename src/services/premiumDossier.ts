@@ -27,6 +27,7 @@ export async function buildPremiumDossier(
 ): Promise<DossierResult> {
   const security = await scanContract(contractAddress, env, {
     bypassCache: options.bypassCache,
+    rpcTier: "critical",
   });
   const market_structure = await analyzeMarketStructure(env, security);
 

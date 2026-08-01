@@ -9,7 +9,7 @@ import {
   enrichAnalysis,
   type AnalysisStatus,
 } from "./analyzer";
-import { getContractBytecode } from "./alchemy";
+import { getContractBytecode, type LightRpcTier } from "./alchemy";
 import {
   applyStubAdminProbes,
   probeStubAndAdminSurface,
@@ -74,6 +74,11 @@ export interface ScanOptions {
    * Saves KV writes vs bypassCache while keeping watch reasonably fresh.
    */
   maxCacheAgeSeconds?: number;
+  /**
+   * Light on-chain reads (getCode / stub eth_call).
+   * Paid HTTP products use `critical` (Alchemy); cron stays on `logs` (public).
+   */
+  rpcTier?: LightRpcTier;
 }
 
 function cacheKey(network: string, contractAddress: string): string {
@@ -251,15 +256,21 @@ export async function scanContract(
     }
   }
 
+  const rpcTier: LightRpcTier = options.rpcTier ?? "logs";
   const [bytecode, goplus, honeypotIs] = await Promise.all([
-    getContractBytecode(address, env),
+    getContractBytecode(address, env, rpcTier),
     fetchGoPlusTokenSecurity(address, network),
     fetchHoneypotIs(address, network),
   ]);
 
   const local = analyzeBytecode(bytecode);
   // Minimal / 0xef code: probe live ERC-20 + AccessControl views (MoonBase-style stubs).
-  const stubProbes = await probeStubAndAdminSurface(env, address, bytecode);
+  const stubProbes = await probeStubAndAdminSurface(
+    env,
+    address,
+    bytecode,
+    rpcTier,
+  );
   const withStub = applyStubAdminProbes(local, stubProbes);
   const analysis = enrichAnalysis(
     withStub,

@@ -170,6 +170,7 @@ async function handleWatchRequest(
   try {
     initialScan = await scanContract(parsed.target_address, env, {
       bypassCache: true,
+      rpcTier: "critical",
     });
   } catch (error) {
     console.error(
@@ -681,6 +682,7 @@ export default {
         });
         const result = await scanContract(address, env, {
           bypassCache: isAdminAuthorized(request, env),
+          rpcTier: "critical",
         });
         return withCors(
           jsonResponse({

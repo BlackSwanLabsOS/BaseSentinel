@@ -3,7 +3,7 @@ import { resolveNetwork } from "../config/network";
 import {
   getLatestBlockNumber,
   getLogs,
-  logsRpc,
+  lightRpc,
   type EthLog,
 } from "./alchemy";
 import type { GoPlusTokenFlags, GoPlusHolderRow } from "./goplus";
@@ -67,7 +67,9 @@ async function ethCall(
   data: string,
 ): Promise<string | null> {
   try {
-    return await logsRpc<string>(env, "eth_call", [
+    // Dossier is always a paid product — use Alchemy for light eth_call.
+    // Heavy eth_getLogs stay on the public logs pool (see getLogs below).
+    return await lightRpc<string>(env, "critical", "eth_call", [
       { to, data },
       "latest",
     ]);
