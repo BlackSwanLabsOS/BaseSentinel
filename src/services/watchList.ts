@@ -293,6 +293,46 @@ function rotateKeys(keys: string[], afterKey: string | null): string[] {
   return [...keys.slice(idx + 1), ...keys.slice(0, idx + 1)];
 }
 
+function isDiscordWebhookUrl(webhookUrl: string): boolean {
+  try {
+    const host = new URL(webhookUrl).hostname.toLowerCase();
+    return host === "discord.com" || host === "discordapp.com";
+  } catch {
+    return false;
+  }
+}
+
+/** Discord execute-webhook needs content/embeds — raw STATUS_CHANGED JSON is rejected. */
+function webhookRequestBody(
+  webhookUrl: string,
+  payload: WatchStatusChangedEvent,
+): string {
+  if (!isDiscordWebhookUrl(webhookUrl)) {
+    return JSON.stringify(payload);
+  }
+
+  const prevFlags = payload.previous_risk_flags.join(", ") || "—";
+  const newFlags = payload.new_risk_flags.join(", ") || "—";
+  return JSON.stringify({
+    username: "BaseSentinel Watch",
+    embeds: [
+      {
+        title: "Watch status changed",
+        color: 0xe67e22,
+        description: [
+          `**Address:** \`${payload.address}\``,
+          `**Verdict:** ${payload.previous_verdict ?? "—"} → **${payload.new_verdict}**`,
+          `**Tax:** ${payload.previous_tax ?? "—"} → ${payload.new_tax ?? "—"}`,
+          `**Flags:** ${prevFlags} → ${newFlags}`,
+          `**Reason:** ${payload.reason}`,
+        ].join("\n"),
+        footer: { text: `watch_id ${payload.watch_id}` },
+        timestamp: payload.checked_at,
+      },
+    ],
+  });
+}
+
 async function postWebhook(
   webhookUrl: string,
   payload: WatchStatusChangedEvent,
@@ -306,7 +346,7 @@ async function postWebhook(
         "Content-Type": "application/json",
         "User-Agent": "BaseSentinel-Watch/1.0",
       },
-      body: JSON.stringify(payload),
+      body: webhookRequestBody(webhookUrl, payload),
       signal: controller.signal,
     });
     if (!response.ok) {
