@@ -308,6 +308,23 @@ export async function getTransactionReceipt(
   return receipt ?? null;
 }
 
+/**
+ * Block timestamp (unix seconds) for payment age checks. Critical RPC only.
+ */
+export async function getBlockTimestampSeconds(
+  blockNumberHex: string,
+  env: Env,
+): Promise<number | null> {
+  const block = await criticalRpc<{ timestamp?: string } | null>(
+    env,
+    "eth_getBlockByNumber",
+    [blockNumberHex, false],
+  );
+  if (!block?.timestamp) return null;
+  const ts = Number.parseInt(block.timestamp, 16);
+  return Number.isFinite(ts) ? ts : null;
+}
+
 export async function getLatestBlockNumber(env: Env): Promise<number> {
   const hex = await logsRpc<string>(env, "eth_blockNumber", []);
   return Number.parseInt(hex, 16);

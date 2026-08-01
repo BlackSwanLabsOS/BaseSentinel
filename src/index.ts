@@ -9,10 +9,12 @@ import {
   liveStreamBindingKey,
   PaymentBindingMismatchError,
   PaymentBoundToOtherContractError,
+  PaymentBusyError,
   PaymentReplayError,
   PaymentRequiredError,
   watchBindingKey,
 } from "./middleware/payment";
+import { PaymentRateLimitError } from "./middleware/rateLimit";
 import { isAdminAuthorized, requireAdmin } from "./middleware/admin";
 import {
   buildAiPluginManifest,
@@ -222,6 +224,26 @@ function paymentErrorResponse(
 ): Response | null {
   if (error instanceof PaymentRequiredError) {
     return withCors(build402Response(env, requestUrl, error.product));
+  }
+
+  if (error instanceof PaymentRateLimitError) {
+    const res = apiErrorResponse(
+      error.errorCode,
+      error.message,
+      error.status,
+    );
+    res.headers.set("Retry-After", String(error.retryAfterSeconds));
+    return withCors(res);
+  }
+
+  if (error instanceof PaymentBusyError) {
+    const res = apiErrorResponse(
+      error.errorCode,
+      error.message,
+      error.status,
+    );
+    res.headers.set("Retry-After", String(error.retryAfterSeconds));
+    return withCors(res);
   }
 
   if (
@@ -603,3 +625,5 @@ export default {
     await runScheduledScan(env, ctx);
   },
 } satisfies ExportedHandler<Env>;
+
+export { PaymentLockDO } from "./durable/paymentLock";

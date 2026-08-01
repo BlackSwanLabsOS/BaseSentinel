@@ -25,4 +25,9 @@ export interface Env {
    * Create a separate channel webhook e.g. #ops-logs.
    */
   DISCORD_OPS_WEBHOOK_URL?: string;
+  /**
+   * Per-tx payment redeem lock. Serializes first consume so concurrent
+   * requests cannot double-spend the same proof (KV has no CAS).
+   */
+  PAYMENT_LOCK: DurableObjectNamespace;
 }

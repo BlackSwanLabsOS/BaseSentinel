@@ -15,6 +15,15 @@ LOGS_RPC_URL = "https://mainnet.base.org,https://base.gateway.tenderly.co,https:
 binding = "SCAN_CACHE"
 id = "083d1d22fbd0476798f3fdaa6cdad67d"
 
+# Serializes first redeem of each payment proof (atomic consume).
+[[durable_objects.bindings]]
+name = "PAYMENT_LOCK"
+class_name = "PaymentLockDO"
+
+[[migrations]]
+tag = "v1-payment-lock"
+new_sqlite_classes = ["PaymentLockDO"]
+
 # Auto-discover + scan newly paired tokens every 1 minute.
 [triggers]
 crons = ["* * * * *"]

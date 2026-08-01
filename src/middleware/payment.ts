@@ -7,9 +7,10 @@ import {
   type NetworkId,
 } from "../config/network";
 import { ErrorCode, isTimeoutMessage, type ErrorCode as ErrorCodeValue } from "../errors";
-import { getTransactionReceipt } from "../services/alchemy";
+import { getBlockTimestampSeconds, getTransactionReceipt } from "../services/alchemy";
 import type { TransactionReceipt } from "../services/alchemy";
 import { isAdminAuthorized } from "./admin";
+import { assertPaymentVerifyRateLimit } from "./rateLimit";
 
 export const PAYMENT_DECIMALS = 6;
 export const PAYMENT_PROOF_TTL_SECONDS = 86_400; // 24 hours
@@ -111,6 +112,8 @@ interface ConsumedPaymentRecord {
   bindingKey: string;
   /** Older records may store the binding here. */
   contractAddress?: string;
+  /** USDC Transfer `from` (payer) captured at first redeem. */
+  payer?: string;
   usedAt: string;
   status: "consumed";
   network: NetworkId;
@@ -162,6 +165,22 @@ export class PaymentReplayError extends Error {
   constructor(message = "Payment proof already used") {
     super(message);
     this.name = "PaymentReplayError";
+  }
+}
+
+/** Concurrent redeem of the same proof — client should retry shortly. */
+export class PaymentBusyError extends Error {
+  readonly status = 503 as const;
+  readonly errorCode = ErrorCode.TX_HASH_BUSY;
+  readonly retryAfterSeconds: number;
+
+  constructor(
+    retryAfterSeconds = 2,
+    message = "Payment proof is being redeemed by another request. Retry shortly.",
+  ) {
+    super(message);
+    this.name = "PaymentBusyError";
+    this.retryAfterSeconds = Math.max(1, Math.ceil(retryAfterSeconds));
   }
 }
 
@@ -525,12 +544,19 @@ export function build402Response(
   });
 }
 
+interface ValidatedUsdcPayment {
+  /** Largest USDC Transfer amount to treasury in this receipt. */
+  amount: bigint;
+  /** ERC-20 Transfer `from` for the matching treasury transfer (largest). */
+  payer: string | null;
+}
+
 function assertValidUsdcPayment(
   receipt: TransactionReceipt,
   paymentAddress: string,
   usdcContract: string,
   product: PaymentProduct,
-): void {
+): ValidatedUsdcPayment {
   if (receipt.status !== "0x1") {
     throw new InvalidPaymentProofError(
       "Transaction failed on-chain",
@@ -543,6 +569,7 @@ function assertValidUsdcPayment(
   const usdc = normalizeAddress(usdcContract);
 
   let maxToTreasury = 0n;
+  let payerForMax: string | null = null;
   let sawUsdcToTreasury = false;
 
   for (const log of receipt.logs ?? []) {
@@ -553,7 +580,10 @@ function assertValidUsdcPayment(
 
     sawUsdcToTreasury = true;
     const amount = parseHexBigInt(log.data);
-    if (amount > maxToTreasury) maxToTreasury = amount;
+    if (amount > maxToTreasury) {
+      maxToTreasury = amount;
+      payerForMax = addressFromTopic(log.topics[1]);
+    }
   }
 
   if (!sawUsdcToTreasury) {
@@ -571,13 +601,67 @@ function assertValidUsdcPayment(
       422,
     );
   }
+
+  return { amount: maxToTreasury, payer: payerForMax };
+}
+
+async function assertPaymentNotExpired(
+  receipt: TransactionReceipt,
+  env: Env,
+): Promise<void> {
+  const blockHex = receipt.blockNumber;
+  if (!blockHex) {
+    throw new InvalidPaymentProofError(
+      "Transaction receipt missing blockNumber",
+      ErrorCode.PAYMENT_INVALID,
+      422,
+    );
+  }
+
+  let blockTs: number | null;
+  try {
+    blockTs = await getBlockTimestampSeconds(blockHex, env);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isTimeoutMessage(message)) {
+      throw new InvalidPaymentProofError(
+        `Upstream timeout reading payment block: ${message}`,
+        ErrorCode.UPSTREAM_TIMEOUT,
+        502,
+      );
+    }
+    throw new InvalidPaymentProofError(
+      `Failed to read payment block timestamp: ${message}`,
+      ErrorCode.UPSTREAM_TIMEOUT,
+      502,
+    );
+  }
+
+  if (blockTs === null) {
+    throw new InvalidPaymentProofError(
+      "Payment block timestamp unavailable",
+      ErrorCode.UPSTREAM_TIMEOUT,
+      502,
+    );
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  // Allow small clock skew / not-yet-indexed edge (future blocks).
+  const ageSec = nowSec - blockTs;
+  if (ageSec > PAYMENT_MAX_TIMEOUT_SECONDS) {
+    throw new InvalidPaymentProofError(
+      `Payment proof expired. Redeem within ${PAYMENT_MAX_TIMEOUT_SECONDS}s of the on-chain transfer (maxTimeoutSeconds).`,
+      ErrorCode.PAYMENT_EXPIRED,
+      422,
+    );
+  }
 }
 
 async function verifyPaymentOnChain(
   txHash: string,
   env: Env,
   product: PaymentProduct,
-): Promise<void> {
+): Promise<ValidatedUsdcPayment> {
   const network = resolveNetwork(env);
   const usdcContract = getUsdcContractAddress(network);
 
@@ -609,12 +693,75 @@ async function verifyPaymentOnChain(
     );
   }
 
-  assertValidUsdcPayment(
+  const validated = assertValidUsdcPayment(
     receipt,
     env.PAYMENT_ADDRESS,
     usdcContract,
     product,
   );
+  await assertPaymentNotExpired(receipt, env);
+  return validated;
+}
+
+/**
+ * Serialize first-redeem for product+txHash via Durable Object lease.
+ * KV alone cannot CAS; without this, concurrent requests can double-consume.
+ */
+async function withPaymentConsumeLock<T>(
+  env: Env,
+  productId: PaymentProductId,
+  paymentProof: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const id = env.PAYMENT_LOCK.idFromName(
+    `${productId}:${paymentProof.toLowerCase()}`,
+  );
+  const stub = env.PAYMENT_LOCK.get(id);
+
+  let acquired = false;
+  try {
+    const acq = await stub.fetch("https://payment-lock/acquire", {
+      method: "POST",
+    });
+
+    if (acq.status === 423) {
+      let retryAfter = 2;
+      try {
+        const body = (await acq.json()) as { retryAfterSeconds?: number };
+        if (
+          typeof body.retryAfterSeconds === "number" &&
+          Number.isFinite(body.retryAfterSeconds)
+        ) {
+          retryAfter = body.retryAfterSeconds;
+        }
+      } catch {
+        // ignore JSON parse errors
+      }
+      throw new PaymentBusyError(retryAfter);
+    }
+
+    if (!acq.ok) {
+      throw new InvalidPaymentProofError(
+        `Payment lock unavailable (${acq.status})`,
+        ErrorCode.UPSTREAM_TIMEOUT,
+        502,
+      );
+    }
+
+    acquired = true;
+    return await fn();
+  } finally {
+    if (acquired) {
+      try {
+        await stub.fetch("https://payment-lock/release", { method: "POST" });
+      } catch (error) {
+        console.warn(
+          "[payment-lock] release failed:",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
+  }
 }
 
 /**
@@ -662,43 +809,49 @@ export async function enforcePayment(
     );
   }
 
-  await verifyPaymentOnChain(paymentProof, env, product);
+  await withPaymentConsumeLock(env, product.id, paymentProof, async () => {
+    const key = paymentProofCacheKey(product.id, paymentProof);
+    const existing = (await env.SCAN_CACHE.get(key, "json")) as
+      | ConsumedPaymentRecord
+      | null;
 
-  const key = paymentProofCacheKey(product.id, paymentProof);
-  const existing = (await env.SCAN_CACHE.get(key, "json")) as
-    | ConsumedPaymentRecord
-    | null;
+    // Resolve already-consumed proofs without Alchemy (replay / SSE reuse).
+    if (existing) {
+      const boundTo = (
+        existing.bindingKey ?? existing.contractAddress ?? ""
+      ).toLowerCase();
 
-  if (existing) {
-    const boundTo = (
-      existing.bindingKey ?? existing.contractAddress ?? ""
-    ).toLowerCase();
+      if (boundTo && boundTo !== bindingKey) {
+        throw new PaymentBindingMismatchError(
+          `Payment proof already used for a different ${product.bindingLabel}`,
+        );
+      }
 
-    if (boundTo && boundTo !== bindingKey) {
-      throw new PaymentBindingMismatchError(
-        `Payment proof already used for a different ${product.bindingLabel}`,
-      );
+      if (options.allowReuse && boundTo === bindingKey) {
+        return;
+      }
+
+      throw new PaymentReplayError();
     }
 
-    if (options.allowReuse && boundTo === bindingKey) {
-      return;
-    }
+    // Soft IP limit before eth_getTransactionReceipt (Alchemy CU).
+    await assertPaymentVerifyRateLimit(request);
+    const validated = await verifyPaymentOnChain(paymentProof, env, product);
 
-    throw new PaymentReplayError();
-  }
+    const record: ConsumedPaymentRecord = {
+      product: product.id,
+      bindingKey,
+      // Include contractAddress for older clients reading scan proofs.
+      contractAddress: product.id === "scan" ? bindingKey : undefined,
+      payer: validated.payer ?? undefined,
+      usedAt: new Date().toISOString(),
+      status: "consumed",
+      network,
+    };
 
-  const record: ConsumedPaymentRecord = {
-    product: product.id,
-    bindingKey,
-    // Include contractAddress for older clients reading scan proofs.
-    contractAddress: product.id === "scan" ? bindingKey : undefined,
-    usedAt: new Date().toISOString(),
-    status: "consumed",
-    network,
-  };
-
-  await env.SCAN_CACHE.put(key, JSON.stringify(record), {
-    expirationTtl: PAYMENT_PROOF_TTL_SECONDS,
+    await env.SCAN_CACHE.put(key, JSON.stringify(record), {
+      expirationTtl: PAYMENT_PROOF_TTL_SECONDS,
+    });
   });
 }
 

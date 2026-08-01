@@ -13,6 +13,12 @@ export const ErrorCode = {
   UPSTREAM_TIMEOUT: "UPSTREAM_TIMEOUT",
   /** Cloudflare KV daily write/list quota exhausted (Free tier). */
   KV_LIMIT_EXCEEDED: "KV_LIMIT_EXCEEDED",
+  /** Too many payment-verify attempts (protects Alchemy CU). */
+  RATE_LIMITED: "RATE_LIMITED",
+  /** Payment tx older than maxTimeoutSeconds (first redeem only). */
+  PAYMENT_EXPIRED: "PAYMENT_EXPIRED",
+  /** Another request is redeeming this proof right now — retry shortly. */
+  TX_HASH_BUSY: "TX_HASH_BUSY",
   INVALID_JSON: "INVALID_JSON",
   METHOD_NOT_ALLOWED: "METHOD_NOT_ALLOWED",
   NOT_FOUND: "NOT_FOUND",

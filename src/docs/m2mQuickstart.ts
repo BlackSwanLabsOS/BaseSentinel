@@ -47,7 +47,7 @@ Machines should discover BaseSentinel via catalogs (\`/tools.json\`, OpenAPI, x4
 1. **Discover** — \`GET /tools.json\` (or OpenAPI / x402 catalog).
 2. **Call** — \`GET /scan/{address}\` without payment → expect **402** + \`error_code: PAYMENT_REQUIRED\` + \`payment_info\` (\`settlement: tx_hash_proof\`, \`facilitator: false\`).
 3. **Pay** — \`Transfer\` exact USDC on Base to \`payment_info.recipient\` (amount from \`payment_info\`). Do **not** use a Coinbase facilitator.
-4. **Retry** — same URL with \`X-Payment-Proof: <tx_hash>\` of that transfer.
+4. **Retry** — same URL with \`X-Payment-Proof: <tx_hash>\` of that transfer (**within \`maxTimeoutSeconds\` = 300s** of the on-chain transfer).
 5. **Branch** on HTTP + \`error_code\` / \`verdict\`.
 
 ### Branch on \`error_code\`
@@ -61,6 +61,9 @@ Machines should discover BaseSentinel via catalogs (\`/tools.json\`, OpenAPI, x4
 | 409 | \`TX_HASH_BOUND_OTHER\` | Stop — proof bound to another resource |
 | 422 | \`INSUFFICIENT_USDC\` | Pay again with correct amount |
 | 422 | \`PAYMENT_INVALID\` | Fix payTo / USDC asset / network |
+| 422 | \`PAYMENT_EXPIRED\` | Pay again — proof must be redeemed within \`maxTimeoutSeconds\` (300s) of the on-chain transfer |
+| 429 | \`RATE_LIMITED\` | Back off (\`Retry-After\`); too many payment verifies |
+| 503 | \`TX_HASH_BUSY\` | Another request is redeeming this proof — retry with \`Retry-After\` |
 | 502 | \`UPSTREAM_TIMEOUT\` | Retry after a short backoff |
 
 ### Branch on \`verdict\` (200 OK)
