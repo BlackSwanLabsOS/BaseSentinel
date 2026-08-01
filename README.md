@@ -152,7 +152,7 @@ Settlement for buyers of BaseSentinel remains: send USDC on Base → retry with 
 
 | Package | Install | What it does |
 |---------|---------|--------------|
-| [MCP](packages/mcp-basesentinel) | `npx -y @basesentinel/mcp` / `npm i @basesentinel/mcp` | Stdio MCP tool `scan_contract` (Cursor / Claude Desktop) |
+| [MCP](packages/mcp-basesentinel) | `npx -y @basesentinel/mcp` / `npm i @basesentinel/mcp` | Stdio MCP tool `scan_contract` |
 | [Eliza OS](packages/eliza-basesentinel) | `npm i @basesentinel/eliza` | Plugin action `SCAN_CONTRACT` |
 | [LangChain](packages/langchain-basesentinel) | `pip install basesentinel-langchain` | `BaseSentinelScanTool` for Python agents |
 

@@ -1,8 +1,10 @@
 # @basesentinel/eliza
 
-Eliza OS plugin that lets an agent **scan Base contracts** via [BaseSentinel](https://api.blackswanlabs.pl).
+Eliza OS plugin for [BaseSentinel](https://api.blackswanlabs.pl) — scan Base contracts for honeypot / scam risk.
 
-Payment is **M2M under the hood** (USDC transfer on Base → `X-Payment-Proof`). The LLM only sees a short risk summary.
+Each scan pays **0.005 USDC** on Base (tx-hash proof). The model sees only a short risk summary.
+
+**API:** https://api.blackswanlabs.pl · **Docs:** https://api.blackswanlabs.pl/docs
 
 ## Install
 
@@ -10,7 +12,7 @@ Payment is **M2M under the hood** (USDC transfer on Base → `X-Payment-Proof`).
 npm install @basesentinel/eliza
 ```
 
-Peer: `@elizaos/core` (optional at build time; required at agent runtime).
+Requires `@elizaos/core` at agent runtime (peer dependency).
 
 ## Register
 
@@ -19,42 +21,38 @@ import { AgentRuntime } from "@elizaos/core";
 import baseSentinelPlugin from "@basesentinel/eliza";
 
 const runtime = new AgentRuntime({
-  // ...character, models
+  // character, models, …
   plugins: [baseSentinelPlugin],
 });
 ```
 
-## Runtime secrets (never chat these to the LLM)
+## Environment
 
-| Env | Required | Purpose |
-|-----|----------|---------|
-| `BASESENTINEL_PRIVATE_KEY` | yes* | Base wallet private key (`0x` + 64 hex) with USDC |
-| `BASESENTINEL_PAYMENT_PROOF` | no | Already-paid tx hash (local test; not free scans) |
-| `BASESENTINEL_RPC_URL` | no | Base RPC (default `https://mainnet.base.org`) |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `BASESENTINEL_PRIVATE_KEY` | yes | Base wallet private key (`0x` + 64 hex) with USDC |
+| `BASESENTINEL_RPC_URL` | no | Default `https://mainnet.base.org` |
 | `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
 
-\*Required unless `BASESENTINEL_PAYMENT_PROOF` is set.
-
-Cost per scan: **0.005 USDC** to treasury `0x21360A04853b85a8d2E918b73f97C8ccf5939946`.
+Treasury (scan): `0x21360A04853b85a8d2E918b73f97C8ccf5939946` · **0.005 USDC** per call.
 
 ## Action
 
-- **Name:** `SCAN_CONTRACT`
-- **Input:** a `0x` contract address in the user message (or `options.address`)
-- **Output (LLM):**  
-  `Contract 0x… is SAFE (CLEAR). Score: 100/100. Reasons: Bluechip_Allowlist:USDC`
+| | |
+|--|--|
+| **Name** | `SCAN_CONTRACT` |
+| **Input** | Contract address (`0x…`) in the user message, or `options.address` |
+| **Output** | e.g. `Contract 0x… is SAFE (CLEAR). Score: 100/100. Reasons: …` |
 
 ## Errors
 
-Failures surface as `BaseSentinelError` with stable `errorCode` (same as the API):
+Failures raise `BaseSentinelError` with stable `errorCode` values matching the HTTP API, including:
 
-- `PAYMENT_REQUIRED`, `TX_HASH_CONSUMED`, `TX_HASH_BOUND_OTHER`
-- `INSUFFICIENT_USDC`, `PAYMENT_INVALID`, `INVALID_ADDRESS_FORMAT`
-- `UPSTREAM_TIMEOUT`, …
+`PAYMENT_REQUIRED`, `TX_HASH_CONSUMED`, `TX_HASH_BOUND_OTHER`, `INSUFFICIENT_USDC`, `PAYMENT_INVALID`, `INVALID_ADDRESS_FORMAT`, `UPSTREAM_TIMEOUT`
 
-HTTP **402** is `PAYMENT_REQUIRED` only. Other `error_code` values arrive on other status codes — branch on `errorCode`, not on “402 + enum”.
+Branch on `errorCode`. HTTP `402` is only `PAYMENT_REQUIRED`; other codes use other status codes.
 
-## Programmatic use (no Eliza)
+## Programmatic use (without Eliza)
 
 ```ts
 import {
@@ -63,13 +61,9 @@ import {
   summarizeScanResult,
 } from "@basesentinel/eliza";
 
-const { txHash } = await payForScan({
-  contractAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-});
-const result = await scanContract(
-  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  txHash,
-);
+const address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const { txHash } = await payForScan({ contractAddress: address });
+const result = await scanContract(address, txHash);
 console.log(summarizeScanResult(result));
 ```
 
@@ -80,3 +74,7 @@ cd packages/eliza-basesentinel
 npm install
 npm run build
 ```
+
+## License
+
+MIT · [BlackSwan Labs](https://blackswanlabs.pl)

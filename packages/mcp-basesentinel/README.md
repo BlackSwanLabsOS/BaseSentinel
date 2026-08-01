@@ -1,18 +1,20 @@
 # @basesentinel/mcp
 
-MCP (Model Context Protocol) server for [BaseSentinel](https://api.blackswanlabs.pl).
+MCP server for [BaseSentinel](https://api.blackswanlabs.pl) — scan Base contracts for honeypot / scam risk.
 
-Exposes tool **`scan_contract`**. Payment (0.005 USDC on Base → `X-Payment-Proof`) stays in the runtime — the model only sees a risk summary.
+Exposes tool `scan_contract`. The runtime pays **0.005 USDC** on Base and attaches `X-Payment-Proof`; the model receives only a risk summary.
+
+**API:** https://api.blackswanlabs.pl · **Docs:** https://api.blackswanlabs.pl/docs
 
 ## Install
 
 ```bash
 npm install -g @basesentinel/mcp
-# or one-shot:
-npx @basesentinel/mcp
+# or:
+npx -y @basesentinel/mcp
 ```
 
-Local build from this repo:
+From this repository:
 
 ```bash
 cd packages/mcp-basesentinel
@@ -20,7 +22,9 @@ npm install
 npm run build
 ```
 
-## Cursor / Claude Desktop (stdio)
+## MCP client config
+
+Example for Cursor or Claude Desktop (`mcpServers`):
 
 ```json
 {
@@ -37,23 +41,24 @@ npm run build
 }
 ```
 
-Optional local testing: set `BASESENTINEL_PAYMENT_PROOF` to a tx hash you already paid (API still enforces one redeem — not a free bypass).
+## Environment
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `BASESENTINEL_PRIVATE_KEY` | yes | Base wallet private key with USDC |
+| `BASESENTINEL_RPC_URL` | no | Base RPC (default: public Base endpoint) |
+| `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
+
+Treasury (scan): `0x21360A04853b85a8d2E918b73f97C8ccf5939946` · **0.005 USDC** per call.
 
 ## Tool
 
-| Name | Input | Output |
+| Name | Input | Result |
 |------|--------|--------|
-| `scan_contract` | `contract_address` (0x…) | Text summary + structured status/verdict/score/reasons |
+| `scan_contract` | `contract_address` (`0x…`) | Text summary plus status / verdict / score / reasons |
 
-On failure returns `BASESENTINEL_ERROR error_code=…` (stable API codes).
+Failures return a stable line: `BASESENTINEL_ERROR error_code=…` (same codes as the HTTP API).
 
-## Runtime secrets
+## License
 
-| Env | Required | Purpose |
-|-----|----------|---------|
-| `BASESENTINEL_PRIVATE_KEY` | yes* | Base wallet with USDC |
-| `BASESENTINEL_PAYMENT_PROOF` | no | Already-paid tx hash (local test; not free scans) |
-| `BASESENTINEL_RPC_URL` | no | Default public Base RPC |
-| `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
-
-\*Unless payment-proof override is set.
+MIT · [BlackSwan Labs](https://blackswanlabs.pl)

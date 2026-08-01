@@ -6,8 +6,7 @@ Requires:
   BASESENTINEL_PRIVATE_KEY=0x...   # Base wallet with USDC
   OPENAI_API_KEY=...               # or swap the LLM
 
-Does not print secrets. Each scan spends 0.005 USDC unless
-BASESENTINEL_PAYMENT_PROOF is set.
+Does not print secrets. Each scan spends 0.005 USDC on Base.
 """
 
 from __future__ import annotations

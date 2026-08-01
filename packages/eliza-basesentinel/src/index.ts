@@ -47,7 +47,7 @@ export { scanContractAction } from "./actions/scanContract.js";
 export const baseSentinelPlugin: ElizaPlugin = {
   name: "basesentinel",
   description:
-    "Scan Base smart contracts for scam/honeypot risk via BaseSentinel (M2M USDC payment under the hood).",
+    "Scan Base smart contracts for scam/honeypot risk via BaseSentinel (0.005 USDC per scan).",
   actions: [scanContractAction],
   providers: [],
   evaluators: [],
