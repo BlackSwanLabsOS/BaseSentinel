@@ -18,6 +18,15 @@ export interface MarketStructure {
   lp_status: LpStatus;
   is_whale_concentrated: boolean;
   notes: string[];
+  /**
+   * Best-effort extras when GoPlus holders/LP are thin.
+   * Often filled from honeypot.is so dossier still feels premium.
+   */
+  holder_count: number | null;
+  liquidity_usd: number | null;
+  pair_address: string | null;
+  /** Which sources contributed market fields (e.g. goplus, honeypot.is, live_logs). */
+  market_sources: string[];
 }
 
 const DEAD_ADDRESSES = new Set(
@@ -41,12 +50,16 @@ const TRANSFER_TOPIC =
 const ZERO_TOPIC =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 
-/** ~1.4d @ 2s/block — mint discovery when recent Transfer concentration is weak. */
-const MINT_LOOKBACK_BLOCKS = 60_000;
-/** ~5.5h — recent Transfer participants (fits common public RPC caps when chunked). */
-const RECENT_TRANSFER_LOOKBACK_BLOCKS = 10_000;
-const MAX_LOGS_TO_SCAN = 400;
-const MAX_BALANCE_PROBES = 25;
+/**
+ * Shorter windows for dossier live-holder fallback — wide spans (60k+) often
+ * 429 on public LOGS RPC and leave market_structure empty.
+ */
+/** ~4.5h @ 2s/block — mint discovery when code looks stub/hidden. */
+const MINT_LOOKBACK_BLOCKS = 8_000;
+/** ~1.7h — recent Transfer participants. */
+const RECENT_TRANSFER_LOOKBACK_BLOCKS = 3_000;
+const MAX_LOGS_TO_SCAN = 300;
+const MAX_BALANCE_PROBES = 20;
 
 function padAddress(address: string): string {
   return address.replace(/^0x/i, "").toLowerCase().padStart(64, "0");
@@ -310,6 +323,65 @@ async function liveHolderConcentrationFromLogs(
   };
 }
 
+function enrichFromHoneypotIs(
+  honeypotIs: HoneypotIsFlags | null | Omit<HoneypotIsFlags, "rawAvailable">,
+  notes: string[],
+  sources: string[],
+): {
+  holder_count: number | null;
+  liquidity_usd: number | null;
+  pair_address: string | null;
+} {
+  // Scan dossier stores public honeypot.is (rawAvailable stripped) — treat null as missing.
+  if (!honeypotIs) {
+    return { holder_count: null, liquidity_usd: null, pair_address: null };
+  }
+  if ("rawAvailable" in honeypotIs && honeypotIs.rawAvailable === false) {
+    return { holder_count: null, liquidity_usd: null, pair_address: null };
+  }
+
+  const holder_count =
+    typeof honeypotIs.holderCount === "number" &&
+    Number.isFinite(honeypotIs.holderCount)
+      ? Math.max(0, Math.floor(honeypotIs.holderCount))
+      : null;
+  const liquidity_usd =
+    typeof honeypotIs.liquidityUsd === "number" &&
+    Number.isFinite(honeypotIs.liquidityUsd)
+      ? Math.round(honeypotIs.liquidityUsd * 100) / 100
+      : null;
+  const pair_address = honeypotIs.pairAddress?.toLowerCase() ?? null;
+
+  const hasSignal =
+    holder_count !== null || liquidity_usd !== null || pair_address !== null;
+  if (!hasSignal && !honeypotIs.simulationSuccess) {
+    return { holder_count: null, liquidity_usd: null, pair_address: null };
+  }
+
+  sources.push("honeypot.is");
+
+  if (holder_count !== null) {
+    notes.push(`holder_count from honeypot.is: ${holder_count}`);
+  }
+  if (liquidity_usd !== null) {
+    notes.push(`liquidity_usd from honeypot.is (pair pool est.): $${liquidity_usd}`);
+  }
+  if (pair_address) {
+    notes.push(`pair_address from honeypot.is: ${pair_address}`);
+  }
+  if (honeypotIs.simulationSuccess) {
+    const buy = honeypotIs.buyTax;
+    const sell = honeypotIs.sellTax;
+    if (buy !== null || sell !== null) {
+      notes.push(
+        `honeypot.is simulated taxes: buy=${buy ?? "n/a"}% sell=${sell ?? "n/a"}%`,
+      );
+    }
+  }
+
+  return { holder_count, liquidity_usd, pair_address };
+}
+
 /**
  * Market structure for the premium dossier (holders / deployer share / LP hints).
  */
@@ -318,8 +390,13 @@ export async function analyzeMarketStructure(
   scan: ScanResult,
 ): Promise<MarketStructure> {
   const notes: string[] = [];
+  const market_sources: string[] = [];
   const goplus = scan.dossier.goplus as GoPlusTokenFlags | null;
   const honeypotIs = scan.dossier.honeypotIs as HoneypotIsFlags | null;
+
+  if (goplus) {
+    market_sources.push("goplus");
+  }
 
   const deployer =
     goplus?.creatorAddress ?? goplus?.ownerAddress ?? null;
@@ -328,6 +405,9 @@ export async function analyzeMarketStructure(
     goplus?.creatorPercent ?? goplus?.ownerPercent ?? null;
 
   const supply = await erc20TotalSupply(env, scan.address);
+  if (supply !== null) {
+    market_sources.push("eth_call");
+  }
 
   // Prefer live balanceOf(deployer) / totalSupply when deployer is known.
   if (deployer) {
@@ -365,6 +445,9 @@ export async function analyzeMarketStructure(
       { preferMintFirst },
     );
     notes.push(...live.notes);
+    if (live.probed > 0 || live.top5Pct !== null) {
+      market_sources.push("live_logs");
+    }
     top_5_holders_pct = live.top5Pct;
     // When GoPlus omits creator, treat dominant mint/holder as concentration proxy.
     if (
@@ -385,21 +468,24 @@ export async function analyzeMarketStructure(
 
   let lp_status = inferLpStatus(goplus?.lpHolders ?? null);
   if (lp_status === "UNKNOWN") {
-    notes.push("lp_status UNKNOWN — no usable GoPlus lp_holders lock/burn signal");
+    notes.push(
+      "lp_status UNKNOWN — no usable GoPlus lp_holders lock/burn signal (liquidity_usd/pair may still be set from honeypot.is)",
+    );
   } else {
     notes.push(`lp_status inferred from GoPlus lp_holders (${lp_status})`);
   }
 
-  // Soft hint when a pair is known but LP lock status is not.
-  if (lp_status === "UNKNOWN" && honeypotIs?.pairAddress) {
-    notes.push(`pair observed via honeypot.is: ${honeypotIs.pairAddress}`);
-  }
+  const hp = enrichFromHoneypotIs(honeypotIs, notes, market_sources);
 
   const is_whale_concentrated =
     (typeof top_5_holders_pct === "number" && top_5_holders_pct >= 50) ||
     (typeof deployer_balance_pct === "number" && deployer_balance_pct >= 10);
 
   void resolveNetwork(env);
+
+  notes.push(
+    "market_structure is best-effort enrichment on top of security scan — not a substitute for verdict",
+  );
 
   return {
     deployer_balance_pct:
@@ -413,5 +499,9 @@ export async function analyzeMarketStructure(
     lp_status,
     is_whale_concentrated,
     notes,
+    holder_count: hp.holder_count,
+    liquidity_usd: hp.liquidity_usd,
+    pair_address: hp.pair_address,
+    market_sources: [...new Set(market_sources)],
   };
 }
