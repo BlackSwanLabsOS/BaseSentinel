@@ -164,6 +164,13 @@ Directories: [x402 List](https://x402-list.com/)
 
 ---
 
+## License
+
+This repository is licensed under the [MIT License](LICENSE) (© 2026 BlackSwan Labs).  
+MIT covers the source and SDKs — the live BaseSentinel API remains pay-per-call (USDC); a license does not include free scans.
+
+---
+
 ## Contact
 
 BlackSwan Labs — https://blackswanlabs.pl  
