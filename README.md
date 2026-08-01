@@ -158,6 +158,8 @@ Settlement for buyers of BaseSentinel remains: send USDC on Base → retry with 
 
 All three SDKs auto-pay **0.005 USDC** on Base (or use `BASESENTINEL_PAYMENT_PROOF` for smoke). See each package README for env vars.
 
+Directories: [x402 List](https://x402-list.com/) · [Remote OpenClaw MCP directory](https://www.remoteopenclaw.com/mcp)
+
 ---
 
 ## Contact
