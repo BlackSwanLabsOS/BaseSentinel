@@ -37,7 +37,7 @@ npm run build
 }
 ```
 
-Ops smoke without spending: set `BASESENTINEL_PAYMENT_PROOF` to an existing USDC tx hash instead of the private key.
+Optional local testing: set `BASESENTINEL_PAYMENT_PROOF` to a tx hash you already paid (API still enforces one redeem — not a free bypass).
 
 ## Tool
 
@@ -52,7 +52,7 @@ On failure returns `BASESENTINEL_ERROR error_code=…` (stable API codes).
 | Env | Required | Purpose |
 |-----|----------|---------|
 | `BASESENTINEL_PRIVATE_KEY` | yes* | Base wallet with USDC |
-| `BASESENTINEL_PAYMENT_PROOF` | no | Skip spend |
+| `BASESENTINEL_PAYMENT_PROOF` | no | Already-paid tx hash (local test; not free scans) |
 | `BASESENTINEL_RPC_URL` | no | Default public Base RPC |
 | `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
 

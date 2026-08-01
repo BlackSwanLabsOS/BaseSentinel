@@ -29,7 +29,7 @@ const runtime = new AgentRuntime({
 | Env | Required | Purpose |
 |-----|----------|---------|
 | `BASESENTINEL_PRIVATE_KEY` | yes* | Base wallet private key (`0x` + 64 hex) with USDC |
-| `BASESENTINEL_PAYMENT_PROOF` | no | Existing tx hash — skips the spend (ops/smoke) |
+| `BASESENTINEL_PAYMENT_PROOF` | no | Already-paid tx hash (local test; not free scans) |
 | `BASESENTINEL_RPC_URL` | no | Base RPC (default `https://mainnet.base.org`) |
 | `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
 

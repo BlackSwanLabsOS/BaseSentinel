@@ -38,7 +38,7 @@ print(tool.invoke({"contract_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA029
 | Env | Required | Purpose |
 |-----|----------|---------|
 | `BASESENTINEL_PRIVATE_KEY` | yes* | Base wallet key with USDC |
-| `BASESENTINEL_PAYMENT_PROOF` | no | Existing tx hash — skips the spend |
+| `BASESENTINEL_PAYMENT_PROOF` | no | Already-paid tx hash (local test; not free scans) |
 | `BASESENTINEL_RPC_URL` | no | Default `https://mainnet.base.org` |
 | `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
 
