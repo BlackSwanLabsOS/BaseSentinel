@@ -74,6 +74,8 @@ Machines should discover BaseSentinel via catalogs (\`/tools.json\`, OpenAPI, x4
 \`verdict_score\`: integer **0–100** (100 = clean, 0 = high risk).  
 Also read \`status\` (\`SAFE\` / \`SUSPICIOUS\` / \`SCAM\`) and \`risk_flags\` (string array).
 
+**\`AA_BUNDLER_CREATOR\` / \`creator_attribution: "aa_bundler_mislabel"\`:** GoPlus labeled an ERC-4337 bundler/EntryPoint as the token creator (common on Zora / smart wallets). This is **not** a hard honeypot signal — do **not** AVOID solely on prior-honeypot-of-creator. Still honor real flags (\`HONEYPOT\`, \`CANT_SELL\`, \`SCAM\`, taxes, stub code, whale concentration).
+
 ### Minimal scan (curl)
 
 \`\`\`bash

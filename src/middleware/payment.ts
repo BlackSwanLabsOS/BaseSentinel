@@ -275,6 +275,7 @@ function buildBazaarDiscoveryExtension(product: PaymentProduct) {
           verdict: "CLEAR",
           verdict_score: 88,
           risk_flags: [],
+          creator_attribution: null,
           market_structure: {
             deployer_balance_pct: null,
             top_5_holders_pct: null,
@@ -289,6 +290,7 @@ function buildBazaarDiscoveryExtension(product: PaymentProduct) {
           verdict: "CLEAR",
           verdict_score: 88,
           risk_flags: [],
+          creator_attribution: null,
           reasons: ["None"],
         };
 

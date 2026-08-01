@@ -18,7 +18,7 @@ Dual-source consensus: **local bytecode heuristics** + **GoPlus** + **honeypot.i
 
 Also: `risk_flags`, `reasons`, enrichment dossier. Continuous coverage of Uniswap V2/V3, Aerodrome, Clanker, and Virtuals bonding launches (cron + cache).
 
-**Sensitivity:** trading-gate / mint+gate alone → typically `SUSPICIOUS` (yellow); gate + blacklist toolkit → `SCAM`. Empty / EOA → `SUSPICIOUS` + `CAUTION`. Minimal/`0xef` code that still answers ERC-20 (or AccessControl pause/operator) views → `STUB_OR_HIDDEN_CODE` / `ADMIN_POLICY_SURFACE` → typically `SCAM` + `AVOID`. When GoPlus `honeypot_with_same_creator` points at a **verified** ERC-4337 EntryPoint / Base AA bundler → yellow `SUSPICIOUS` + flag `AA_BUNDLER_CREATOR` (not hard SCAM); real non-AA prior-honeypot creators still → SCAM.
+**Sensitivity:** trading-gate / mint+gate alone → typically `SUSPICIOUS` (yellow); gate + blacklist toolkit → `SCAM`. Empty / EOA → `SUSPICIOUS` + `CAUTION`. Minimal/`0xef` code that still answers ERC-20 (or AccessControl pause/operator) views → `STUB_OR_HIDDEN_CODE` / `ADMIN_POLICY_SURFACE` → typically `SCAM` + `AVOID`. When GoPlus `honeypot_with_same_creator` points at a **verified** ERC-4337 EntryPoint / Base AA bundler → yellow `SUSPICIOUS` + flag `AA_BUNDLER_CREATOR` and `creator_attribution: "aa_bundler_mislabel"` (not hard SCAM — ignore prior-honeypot-on-creator only; still honor honeypot/tax/SCAM on the token itself); real non-AA prior-honeypot creators still → SCAM.
 
 ---
 
@@ -100,7 +100,7 @@ curl -s "https://api.blackswanlabs.pl/scan/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA
 
 Without payment you get **HTTP 402** with `payment_info` (amount, payTo, network).
 
-Response includes `status` (SAFE / SUSPICIOUS / SCAM), agent `verdict` (CLEAR / CAUTION / AVOID), `verdict_score`, `risk_flags`, and enrichment dossier.
+Response includes `status` (SAFE / SUSPICIOUS / SCAM), agent `verdict` (CLEAR / CAUTION / AVOID), `verdict_score`, `risk_flags`, optional `creator_attribution` (`aa_bundler_mislabel` when GoPlus creator is AA infra — not a safe-token signal), and enrichment dossier.
 
 ---
 

@@ -13,6 +13,10 @@ export function summarizeScanResult(result: ScanResult): string {
     ? result.reasons.filter(Boolean)
     : [];
   const reasonText = reasons.length > 0 ? reasons.join(", ") : "None";
+  const attribution =
+    result.creator_attribution === "aa_bundler_mislabel"
+      ? " Creator attribution: AA bundler mislabel (not a safe-token signal)."
+      : "";
 
-  return `Contract ${address} is ${status} (${verdict}). Score: ${score}/100. Reasons: ${reasonText}`;
+  return `Contract ${address} is ${status} (${verdict}). Score: ${score}/100. Reasons: ${reasonText}.${attribution}`;
 }

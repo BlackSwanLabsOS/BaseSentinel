@@ -5,6 +5,9 @@
  * we treat it as yellow (SUSPICIOUS) with an AA/bundler label — not hard SCAM.
  */
 
+/** Machine value on scan/dossier when GoPlus creator is AA infra, not the rugger. */
+export type CreatorAttribution = "aa_bundler_mislabel";
+
 /** Lowercase addresses. */
 const AA_MISATTRIBUTED_CREATORS = new Set<string>([
   // EntryPoint v0.6
@@ -47,4 +50,16 @@ export function shouldIgnoreGoPlusPriorHoneypot(opts: {
   // Listing hook reserved for future source-specific AA rules.
   void opts.listingSource;
   return false;
+}
+
+/**
+ * Agent-facing attribution hint from risk_flags.
+ * `aa_bundler_mislabel` ≠ safe token — only: ignore GoPlus prior-honeypot-on-creator.
+ */
+export function resolveCreatorAttribution(
+  riskFlags: readonly string[],
+): CreatorAttribution | null {
+  return riskFlags.includes("AA_BUNDLER_CREATOR")
+    ? "aa_bundler_mislabel"
+    : null;
 }

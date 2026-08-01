@@ -209,6 +209,14 @@ export function buildOpenApiDocument(origin: string, env: Env) {
                       risk_flags: {
                         type: "array",
                         items: { type: "string" },
+                        description:
+                          "Machine flags for agent branching (e.g. HONEYPOT, AA_BUNDLER_CREATOR, STUB_OR_HIDDEN_CODE). AA_BUNDLER_CREATOR = ignore GoPlus prior-honeypot-on-creator only; not a safe-token signal.",
+                      },
+                      creator_attribution: {
+                        type: ["string", "null"],
+                        enum: ["aa_bundler_mislabel", null],
+                        description:
+                          'When "aa_bundler_mislabel", GoPlus creator is ERC-4337 bundler/EntryPoint infra — not proof the token is safe.',
                       },
                       reasons: {
                         type: "array",
@@ -374,6 +382,12 @@ export function buildOpenApiDocument(origin: string, env: Env) {
                       risk_flags: {
                         type: "array",
                         items: { type: "string" },
+                      },
+                      creator_attribution: {
+                        type: ["string", "null"],
+                        enum: ["aa_bundler_mislabel", null],
+                        description:
+                          'When "aa_bundler_mislabel", GoPlus creator is ERC-4337 bundler/EntryPoint infra — not proof the token is safe.',
                       },
                       market_structure: {
                         type: "object",
@@ -581,7 +595,18 @@ export function buildToolsDocument(origin: string, env: Env) {
                 type: "string",
                 enum: ["SAFE", "SUSPICIOUS", "SCAM"],
               },
-              risk_flags: { type: "array", items: { type: "string" } },
+              risk_flags: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Includes AA_BUNDLER_CREATOR when GoPlus creator is AA infra — ignore prior-honeypot-on-creator only; not a safe-token signal.",
+              },
+              creator_attribution: {
+                type: ["string", "null"],
+                enum: ["aa_bundler_mislabel", null],
+                description:
+                  'aa_bundler_mislabel = creator is bundler/EntryPoint mislabel, not proof the token is safe.',
+              },
             },
           },
         },

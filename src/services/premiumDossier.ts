@@ -5,6 +5,7 @@ import {
   type MarketStructure,
 } from "./marketStructure";
 import { buildVerdict } from "./verdict";
+import { resolveCreatorAttribution } from "../config/aaInfrastructure";
 
 export interface DossierResult {
   address: string;
@@ -12,6 +13,8 @@ export interface DossierResult {
   verdict: ScanResult["verdict"];
   verdict_score: number;
   risk_flags: string[];
+  /** Same meaning as on /scan — AA creator mislabel hint for agents. */
+  creator_attribution: ScanResult["creator_attribution"];
   market_structure: MarketStructure;
   security: ScanResult;
 }
@@ -39,6 +42,7 @@ export async function buildPremiumDossier(
     deployerBalancePct: market_structure.deployer_balance_pct,
     top5HoldersPct: market_structure.top_5_holders_pct,
   });
+  const creator_attribution = resolveCreatorAttribution(enriched.risk_flags);
 
   return {
     address: security.address,
@@ -46,12 +50,14 @@ export async function buildPremiumDossier(
     verdict: enriched.verdict,
     verdict_score: enriched.verdict_score,
     risk_flags: enriched.risk_flags,
+    creator_attribution,
     market_structure,
     security: {
       ...security,
       verdict: enriched.verdict,
       verdict_score: enriched.verdict_score,
       risk_flags: enriched.risk_flags,
+      creator_attribution,
     },
   };
 }

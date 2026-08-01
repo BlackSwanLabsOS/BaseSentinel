@@ -30,9 +30,14 @@ import {
   normalizeEthereumAddress,
 } from "../utils/validation";
 import { buildVerdict, type AgentVerdict } from "./verdict";
+import {
+  resolveCreatorAttribution,
+  type CreatorAttribution,
+} from "../config/aaInfrastructure";
 
 export type { ListingContext, ScanDossier } from "./scanTypes";
 export type { AgentVerdict };
+export type { CreatorAttribution };
 
 const CACHE_TTL_SECONDS = 86_400; // 24 hours
 /** Default max age when watch asks for semi-fresh cache. */
@@ -52,6 +57,11 @@ export interface ScanResult {
   /** 100 = clean, 0 = deadly. */
   verdict_score: number;
   risk_flags: string[];
+  /**
+   * When set, GoPlus "creator" is AA infra mislabel (not the real deployer).
+   * Does NOT mean the token is safe — still honor honeypot/tax/SCAM signals.
+   */
+  creator_attribution: CreatorAttribution | null;
 }
 
 export interface ScanOptions {
@@ -105,8 +115,16 @@ function toPublicHoneypotIs(
 }
 
 function withVerdict(
-  result: Omit<ScanResult, "verdict" | "verdict_score" | "risk_flags"> &
-    Partial<Pick<ScanResult, "verdict" | "verdict_score" | "risk_flags">>,
+  result: Omit<
+    ScanResult,
+    "verdict" | "verdict_score" | "risk_flags" | "creator_attribution"
+  > &
+    Partial<
+      Pick<
+        ScanResult,
+        "verdict" | "verdict_score" | "risk_flags" | "creator_attribution"
+      >
+    >,
 ): ScanResult {
   const v = buildVerdict({
     status: result.status,
@@ -129,6 +147,7 @@ function withVerdict(
     verdict: v.verdict,
     verdict_score: v.verdict_score,
     risk_flags: v.risk_flags,
+    creator_attribution: resolveCreatorAttribution(v.risk_flags),
   };
 }
 
@@ -170,6 +189,7 @@ export async function scanContract(
       verdict: "CLEAR",
       verdict_score: 100,
       risk_flags: [],
+      creator_attribution: null,
     };
     await kvPutBestEffort(env.SCAN_CACHE, key, JSON.stringify(result), {
       expirationTtl: CACHE_TTL_SECONDS,
