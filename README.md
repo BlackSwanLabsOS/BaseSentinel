@@ -18,7 +18,7 @@ Dual-source consensus: **local bytecode heuristics** + **GoPlus** + **honeypot.i
 
 Also: `risk_flags`, `reasons`, enrichment dossier. Continuous coverage of Uniswap V2/V3, Aerodrome, Clanker, and Virtuals bonding launches (cron + cache).
 
-**False-positive softens (live):** empty / EOA addresses → `SUSPICIOUS` + `CAUTION` (not hard `SCAM`/`AVOID`); GoPlus `honeypot_with_same_creator` ignored when the attributed “creator” is known ERC-4337 EntryPoint / Base AA bundler infra (common Zora mislabel); trading-gate-only and empty-proxy paths are less harsh than full honeypot toolkits.
+**Sensitivity:** trading-gate / mint+gate alone → typically `SUSPICIOUS` (yellow); gate + blacklist toolkit → `SCAM`. Empty / EOA → `SUSPICIOUS` + `CAUTION`. Minimal/`0xef` code that still answers ERC-20 (or AccessControl pause/operator) views → `STUB_OR_HIDDEN_CODE` / `ADMIN_POLICY_SURFACE` → typically `SCAM` + `AVOID`. When GoPlus `honeypot_with_same_creator` points at a **verified** ERC-4337 EntryPoint / Base AA bundler → yellow `SUSPICIOUS` + flag `AA_BUNDLER_CREATOR` (not hard SCAM); real non-AA prior-honeypot creators still → SCAM.
 
 ---
 
@@ -110,6 +110,8 @@ Response includes `status` (SAFE / SUSPICIOUS / SCAM), agent `verdict` (CLEAR / 
 curl.exe -s "https://api.blackswanlabs.pl/dossier/0xYourContract" `
   -H "X-Payment-Proof: 0xPASTE_YOUR_TX_HASH_HERE"
 ```
+
+Adds `market_structure` (deployer %, top-5 holders, LP lock hint, whale flag) on top of `/scan`. When GoPlus holders are empty, dossier falls back to Transfer logs + live `balanceOf`.
 
 ---
 

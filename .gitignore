@@ -15,6 +15,9 @@ credentials*.json
 tmp/
 .x402-list.local
 
+# Private local outreach tooling — keep off GitHub
+packages/marketing-agent/
+
 .wrangler-dry/
 
 .wrangler-bundle-check/

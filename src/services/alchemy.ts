@@ -39,11 +39,11 @@ export interface EthLog {
 
 /** Public Base discovery pool (round-robin on 429 / timeout / usage limits). */
 const DEFAULT_BASE_LOGS_POOL = [
-  "https://base.meowrpc.com",
-  "https://base-mainnet.public.blastapi.io",
-  "https://base.gateway.tenderly.co",
   "https://mainnet.base.org",
+  "https://base.gateway.tenderly.co",
   "https://1rpc.io/base",
+  "https://base-mainnet.public.blastapi.io",
+  "https://base.meowrpc.com",
 ] as const;
 
 const DEFAULT_SEPOLIA_LOGS_POOL = ["https://sepolia.base.org"] as const;
@@ -88,7 +88,14 @@ function isRetryableLogsError(error: unknown): boolean {
     /\b503\b/.test(msg) ||
     /\b504\b/.test(msg) ||
     /HTTP 5\d\d/i.test(msg) ||
-    /ECONNRESET|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(msg)
+    /ECONNRESET|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(msg) ||
+    // Free / hostile public nodes — rotate instead of binary-splitting to 10-block hell.
+    /up to a \d+ block range/i.test(msg) ||
+    /block range should work/i.test(msg) ||
+    /limited to a [\d,]+ range/i.test(msg) ||
+    /limited to 0\s*-\s*\d+ blocks/i.test(msg) ||
+    /eth_getLogs is not supported/i.test(msg) ||
+    /method eth_getLogs/i.test(msg)
   );
 }
 
@@ -372,22 +379,26 @@ async function fetchLogsChunk(
     ]);
     return chunk ?? [];
   } catch (error) {
-    // Adaptive split only for range/payload errors — not for 429 (pool already rotated).
-    if (to > from && chunkSize > 50 && isRangeOrPayloadError(error)) {
+    // Adaptive split for true oversized responses (not per-provider free caps —
+    // those rotate via isRetryableLogsError).
+    if (to > from && isRangeOrPayloadError(error)) {
       const mid = Math.floor((from + to) / 2);
+      if (mid < from || mid >= to) {
+        throw error;
+      }
       const left = await fetchLogsChunk(
         env,
         filter,
         from,
         mid,
-        Math.floor(chunkSize / 2),
+        Math.max(1, Math.floor(chunkSize / 2)),
       );
       const right = await fetchLogsChunk(
         env,
         filter,
         mid + 1,
         to,
-        Math.floor(chunkSize / 2),
+        Math.max(1, Math.floor(chunkSize / 2)),
       );
       return [...left, ...right];
     }

@@ -26,7 +26,7 @@ export function statusFromScore(score: number): AnalysisStatus {
 }
 
 /** Minimum runtime bytecode size (hex chars excluding 0x) to not be "empty". */
-const MIN_BYTECODE_HEX_LENGTH = 10;
+export const MIN_BYTECODE_HEX_LENGTH = 10;
 
 /** Sell/buy tax (%) above this is treated as a serious risk signal. */
 const HIGH_TAX_PERCENT = 10;
@@ -166,10 +166,10 @@ export function analyzeBytecode(bytecode: string): AnalysisResult {
   }
 
   const tradingGates = countPush4Selectors(codeHex, TRADING_GATE_SELECTORS);
-  // Common on legit memes before openTrading — soft alone, harsh with blacklist.
+  // Alone → typically SUSPICIOUS (yellow). With blacklist → Honeypot_Toolkit → SCAM.
   if (tradingGates > 0) {
     reasons.push("Trading_Gate_Detected");
-    riskScore += 8 + Math.min(tradingGates - 1, 2) * 4;
+    riskScore += 15 + Math.min(tradingGates - 1, 2) * 8;
   }
 
   const blacklistHits = countPush4Selectors(codeHex, BLACKLIST_SELECTORS);
@@ -192,7 +192,7 @@ export function analyzeBytecode(bytecode: string): AnalysisResult {
 
   if (isToken && hasPush4Selector(codeHex, "40c10f19") && tradingGates > 0) {
     reasons.push("Owner_Mint_With_Trading_Gate");
-    riskScore += 12;
+    riskScore += 25;
   }
 
   if (isToken && tradingGates > 0 && blacklistHits > 0) {
@@ -302,10 +302,14 @@ export function mergeGoPlusEnrichment(
         listingSource,
       })
     ) {
-      // GoPlus often sets creator=bundler (tx.from) for AA/Zora launches.
+      // Verified AA EntryPoint/bundler — yellow watch, not hard SCAM 85.
+      const creator = (goplus.creatorAddress || "").toLowerCase();
+      const short =
+        creator.length >= 12 ? `${creator.slice(0, 10)}…` : creator || "unknown";
       reasons.push(
-        "GoPlus: Creator prior-honeypot ignored (AA/bundler misattribution)",
+        `GoPlus: Creator is known AA bundler/EntryPoint (${short}; prior-honeypot misattribution)`,
       );
+      riskScore = Math.max(riskScore, 55);
     } else {
       reasons.push("GoPlus: Creator linked to prior honeypot");
       riskScore = Math.max(riskScore, 85);
@@ -459,6 +463,10 @@ export function enrichAnalysis(
 }
 
 function isEmptyOrEoaAnalysis(local: AnalysisResult): boolean {
+  // Stub/hidden code is NOT empty — allow GoPlus / honeypot enrichment.
+  if (local.reasons.some((r) => r === "Stub_Or_Hidden_Bytecode")) {
+    return false;
+  }
   return local.reasons.some(
     (r) => r === "Empty_Contract" || r === "Empty_Or_EOA_No_Bytecode",
   );

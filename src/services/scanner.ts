@@ -11,6 +11,10 @@ import {
 } from "./analyzer";
 import { getContractBytecode } from "./alchemy";
 import {
+  applyStubAdminProbes,
+  probeStubAndAdminSurface,
+} from "./stubCodeProbes";
+import {
   fetchGoPlusTokenSecurity,
   type GoPlusTokenFlags,
 } from "./goplus";
@@ -234,8 +238,11 @@ export async function scanContract(
   ]);
 
   const local = analyzeBytecode(bytecode);
+  // Minimal / 0xef code: probe live ERC-20 + AccessControl views (MoonBase-style stubs).
+  const stubProbes = await probeStubAndAdminSurface(env, address, bytecode);
+  const withStub = applyStubAdminProbes(local, stubProbes);
   const analysis = enrichAnalysis(
-    local,
+    withStub,
     goplus,
     honeypotIs,
     options.listing?.source ?? null,

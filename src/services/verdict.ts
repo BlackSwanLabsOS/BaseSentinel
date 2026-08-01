@@ -109,15 +109,19 @@ export function collectRiskFlags(input: VerdictInput): string[] {
     flags.add("CAN_TAKE_BACK_OWNERSHIP");
   }
   if (goplus?.isBlacklisted === true) flags.add("TOKEN_BLACKLIST_FEATURE");
-  if (
-    goplus?.honeypotWithSameCreator === true &&
-    !shouldIgnoreGoPlusPriorHoneypot({
-      creatorAddress: goplus.creatorAddress,
-      honeypotWithSameCreator: true,
-      listingSource: input.listingSource,
-    })
-  ) {
-    flags.add("DEPLOYER_PRIOR_HONEYPOT");
+  if (goplus?.honeypotWithSameCreator === true) {
+    if (
+      shouldIgnoreGoPlusPriorHoneypot({
+        creatorAddress: goplus.creatorAddress,
+        honeypotWithSameCreator: true,
+        listingSource: input.listingSource,
+      })
+    ) {
+      // Creator matched our verified AA/bundler/EntryPoint allowlist.
+      flags.add("AA_BUNDLER_CREATOR");
+    } else {
+      flags.add("DEPLOYER_PRIOR_HONEYPOT");
+    }
   }
 
   const joined = reasons.join(" ").toLowerCase();
@@ -127,6 +131,15 @@ export function collectRiskFlags(input: VerdictInput): string[] {
     joined.includes("no bytecode")
   ) {
     flags.add("EMPTY_OR_MINIMAL_BYTECODE");
+  }
+  if (
+    joined.includes("stub_or_hidden") ||
+    joined.includes("eof_or_reserved_bytecode")
+  ) {
+    flags.add("STUB_OR_HIDDEN_CODE");
+  }
+  if (joined.includes("admin_policy_surface")) {
+    flags.add("ADMIN_POLICY_SURFACE");
   }
   if (joined.includes("blacklist") || joined.includes("antibot")) {
     flags.add("BLACKLIST_SELECTORS");
@@ -167,7 +180,7 @@ export function buildVerdict(input: VerdictInput): VerdictResult {
   let verdict_score = clamp(100 - Math.round(input.riskScore), 0, 100);
 
   // Hard AVOID: force score into the AVOID band.
-  // Empty/EOA and proxy-alone are caution — not automatic AVOID.
+  // True empty/EOA stays caution; stub/hidden code + admin policy → AVOID.
   const tax = maxTax(input.goplus, input.honeypotIs);
   const hardAvoid =
     risk_flags.includes("HONEYPOT") ||
@@ -176,6 +189,8 @@ export function buildVerdict(input: VerdictInput): VerdictResult {
     risk_flags.includes("EXTREME_TAX") ||
     risk_flags.includes("HIGH_TAX") ||
     risk_flags.includes("DEPLOYER_PRIOR_HONEYPOT") ||
+    risk_flags.includes("STUB_OR_HIDDEN_CODE") ||
+    risk_flags.includes("ADMIN_POLICY_SURFACE") ||
     (typeof tax === "number" && tax > 10) ||
     input.status === "SCAM";
 
@@ -187,6 +202,7 @@ export function buildVerdict(input: VerdictInput): VerdictResult {
     risk_flags.includes("PROXY_RISK") ||
     risk_flags.includes("EMPTY_OR_MINIMAL_BYTECODE") ||
     risk_flags.includes("TRADING_GATE") ||
+    risk_flags.includes("AA_BUNDLER_CREATOR") ||
     risk_flags.includes("DEPLOYER_HOLDS_SUPPLY") ||
     risk_flags.includes("HIGH_HOLDER_CONCENTRATION") ||
     input.status === "SUSPICIOUS"

@@ -9,7 +9,7 @@ PAYMENT_ADDRESS = "0x21360A04853b85a8d2E918b73f97C8ccf5939946"
 NETWORK = "base"
 # Discovery / eth_getLogs — public Base pool (comma-separated; code also appends defaults).
 # Round-robin on 429/timeout keeps Alchemy CU for payments only.
-LOGS_RPC_URL = "https://base.meowrpc.com,https://base-mainnet.public.blastapi.io,https://base.gateway.tenderly.co,https://mainnet.base.org,https://1rpc.io/base"
+LOGS_RPC_URL = "https://mainnet.base.org,https://base.gateway.tenderly.co,https://1rpc.io/base,https://base-mainnet.public.blastapi.io,https://base.meowrpc.com"
 
 [[kv_namespaces]]
 binding = "SCAN_CACHE"

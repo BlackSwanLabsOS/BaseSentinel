@@ -1,7 +1,8 @@
 /**
  * ERC-4337 / Account Abstraction addresses that explorers & GoPlus often
  * mislabel as a token "creator" (tx.from = bundler, not the real deployer).
- * Used to soft-ignore GoPlus honeypot_with_same_creator FPs (e.g. Zora coins).
+ * Verified allowlist: when GoPlus sets honeypot_with_same_creator on these,
+ * we treat it as yellow (SUSPICIOUS) with an AA/bundler label — not hard SCAM.
  */
 
 /** Lowercase addresses. */
@@ -32,8 +33,8 @@ export function isAaMisattributedCreator(
 }
 
 /**
- * Soft-ignore GoPlus honeypot_with_same_creator when the attributed creator
- * is AA infra, or when a Zora listing pairs with that misattribution.
+ * True when GoPlus prior-honeypot should NOT force SCAM — creator is on our
+ * verified AA/bundler/EntryPoint list (common Zora / smart-wallet mislabel).
  */
 export function shouldIgnoreGoPlusPriorHoneypot(opts: {
   creatorAddress?: string | null;
@@ -43,15 +44,7 @@ export function shouldIgnoreGoPlusPriorHoneypot(opts: {
   if (opts.honeypotWithSameCreator !== true) return false;
   if (isAaMisattributedCreator(opts.creatorAddress)) return true;
 
-  // Extra belt: Zora coin listings + AA creator already covered above.
-  // Keep listing hook for future bundlers we add to the set.
-  const listing = (opts.listingSource || "").toLowerCase();
-  if (
-    listing.startsWith("zora") &&
-    isAaMisattributedCreator(opts.creatorAddress)
-  ) {
-    return true;
-  }
-
+  // Listing hook reserved for future source-specific AA rules.
+  void opts.listingSource;
   return false;
 }
