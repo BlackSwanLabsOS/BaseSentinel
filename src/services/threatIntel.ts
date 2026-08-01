@@ -66,6 +66,14 @@ function threatDayKey(date: string): string {
   return `threat:day:${date}`;
 }
 
+export function threatContractKvKey(address: string): string {
+  return threatContractKey(address.toLowerCase());
+}
+
+export function threatDayKvKey(date: string): string {
+  return threatDayKey(date);
+}
+
 /** UTC calendar day YYYY-MM-DD */
 export function utcDateString(date = new Date()): string {
   return date.toISOString().slice(0, 10);

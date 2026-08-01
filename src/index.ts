@@ -15,6 +15,14 @@ import {
   watchBindingKey,
 } from "./middleware/payment";
 import { PaymentRateLimitError } from "./middleware/rateLimit";
+import {
+  getAutopsyReport,
+  getAutopsyState,
+  listPendingAutopsyReports,
+  markAutopsyPublished,
+  runAutopsyBatch,
+} from "./services/autopsy";
+import { AUTOPSY_COPY_GUARDRAILS } from "./services/autopsyMetrics";
 import { isAdminAuthorized, requireAdmin } from "./middleware/admin";
 import {
   buildAiPluginManifest,
@@ -344,6 +352,95 @@ export default {
         ErrorCode.METHOD_NOT_ALLOWED,
         "Method Not Allowed",
         405,
+      );
+    }
+
+    // Admin autopsy publisher hooks (GET + POST) before global GET gate.
+    if (url.pathname.startsWith("/api/admin/autopsy")) {
+      const authError = requireAdmin(request, env);
+      if (authError) {
+        return withCors(authError);
+      }
+
+      if (
+        url.pathname === "/api/admin/autopsy/pending" &&
+        request.method === "GET"
+      ) {
+        const limit = Math.min(
+          50,
+          Math.max(1, Number(url.searchParams.get("limit") ?? "20") || 20),
+        );
+        const reports = await listPendingAutopsyReports(env, limit);
+        return withCors(
+          jsonResponse({
+            count: reports.length,
+            copy_guardrails: AUTOPSY_COPY_GUARDRAILS,
+            reports,
+          }),
+        );
+      }
+
+      if (
+        url.pathname === "/api/admin/autopsy/state" &&
+        request.method === "GET"
+      ) {
+        return withCors(jsonResponse(await getAutopsyState(env)));
+      }
+
+      if (
+        url.pathname === "/api/admin/autopsy/run" &&
+        request.method === "POST"
+      ) {
+        const stats = await runAutopsyBatch(env);
+        return withCors(jsonResponse({ ok: true, stats }));
+      }
+
+      if (
+        url.pathname === "/api/admin/autopsy/publish" &&
+        request.method === "POST"
+      ) {
+        let body: { address?: string };
+        try {
+          body = (await request.json()) as { address?: string };
+        } catch {
+          return withCors(
+            apiErrorResponse(ErrorCode.INVALID_JSON, "Invalid JSON body", 400),
+          );
+        }
+        const address = body.address?.trim().toLowerCase();
+        if (!address || !/^0x[a-f0-9]{40}$/.test(address)) {
+          return withCors(
+            apiErrorResponse(
+              ErrorCode.INVALID_ADDRESS_FORMAT,
+              "Invalid address",
+              400,
+            ),
+          );
+        }
+        const updated = await markAutopsyPublished(env, address);
+        if (!updated) {
+          return withCors(
+            apiErrorResponse(ErrorCode.NOT_FOUND, "Autopsy report not found", 404),
+          );
+        }
+        return withCors(jsonResponse({ ok: true, report: updated }));
+      }
+
+      const one = url.pathname.match(
+        /^\/api\/admin\/autopsy\/(0x[a-fA-F0-9]{40})$/,
+      );
+      if (one && request.method === "GET") {
+        const report = await getAutopsyReport(env, one[1]);
+        if (!report) {
+          return withCors(
+            apiErrorResponse(ErrorCode.NOT_FOUND, "Autopsy report not found", 404),
+          );
+        }
+        return withCors(jsonResponse(report));
+      }
+
+      return withCors(
+        apiErrorResponse(ErrorCode.NOT_FOUND, "Not Found", 404),
       );
     }
 

@@ -63,3 +63,13 @@ export function resolveCreatorAttribution(
     ? "aa_bundler_mislabel"
     : null;
 }
+
+/**
+ * True when the address itself is AA EntryPoint / bundler infra
+ * (same allowlist as creator mislabel). Do not autopsy these as "scam tokens".
+ */
+export function isAaInfrastructureAddress(
+  address: string | null | undefined,
+): boolean {
+  return isAaMisattributedCreator(address);
+}

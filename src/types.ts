@@ -26,6 +26,11 @@ export interface Env {
    */
   DISCORD_OPS_WEBHOOK_URL?: string;
   /**
+   * Optional Discord webhook for scam autopsy posts (publisher may also use
+   * a local DISCORD_AUTOPSY_WEBHOOK_URL outside the Worker).
+   */
+  DISCORD_AUTOPSY_WEBHOOK_URL?: string;
+  /**
    * Per-tx payment redeem lock. Serializes first consume so concurrent
    * requests cannot double-spend the same proof (KV has no CAS).
    */

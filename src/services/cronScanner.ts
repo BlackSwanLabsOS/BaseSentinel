@@ -12,6 +12,12 @@ import {
 import { notifyCronDigest, notifyOpsAlert } from "./discord";
 import { runWatchChecks, type WatchRunStats } from "./watchList";
 import { kvPutBestEffort } from "./kvSafe";
+import {
+  getAutopsyState,
+  runAutopsyBatch,
+  shouldRunAutopsy,
+  type AutopsyRunStats,
+} from "./autopsy";
 
 const CRON_STATE_KEY = "cron:state";
 /** Max *fresh* contract scans per cron tick (cache hits do not count). */
@@ -43,6 +49,8 @@ export interface CronState {
   lastDiscoveryAt?: string | null;
   /** Last ops Discord alert (cooldown). */
   lastOpsAlertAt?: string | null;
+  /** Last scam-autopsy batch (daily throttle lives in autopsy state too). */
+  lastAutopsyAt?: string | null;
   network: string;
   lastStats: CronRunStats | null;
 }
@@ -60,6 +68,8 @@ export interface CronRunStats {
   bySource?: Record<string, number>;
   watch?: WatchRunStats;
   watchSkipped?: boolean;
+  autopsy?: AutopsyRunStats;
+  autopsySkipped?: boolean;
 }
 
 export interface CronRunResult {
@@ -105,7 +115,8 @@ function shouldPersistState(
     (stats.watch &&
       (stats.watch.checked > 0 ||
         stats.watch.notified > 0 ||
-        stats.watch.errors > 0));
+        stats.watch.errors > 0)) ||
+    (stats.autopsy && stats.autopsy.processed > 0);
   if (busy) return true;
   if (!previous.lastSuccessAt) return true;
   const last = Date.parse(previous.lastSuccessAt);
@@ -144,6 +155,7 @@ export async function getCronState(env: Env): Promise<CronState> {
       lastWatchAt: null,
       lastDiscoveryAt: null,
       lastOpsAlertAt: null,
+      lastAutopsyAt: null,
       network: resolveNetwork(env),
       lastStats: null,
     }
@@ -241,6 +253,25 @@ export async function runScheduledScan(
       stats.watchSkipped = true;
     }
 
+    // Daily scam autopsy (aged SCAM → KV reports for marketing publisher).
+    const autopsyState = await getAutopsyState(env);
+    let lastAutopsyAt = previous.lastAutopsyAt ?? autopsyState.lastRunAt ?? null;
+    if (shouldRunAutopsy(autopsyState, started)) {
+      try {
+        stats.autopsy = await runAutopsyBatch(env);
+        stats.errors += stats.autopsy.errors;
+        lastAutopsyAt = runAt;
+      } catch (error) {
+        stats.errors += 1;
+        console.error(
+          "[cron] autopsy batch failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    } else {
+      stats.autopsySkipped = true;
+    }
+
     stats.durationMs = Date.now() - started;
 
     const lastDiscoveryAt =
@@ -289,6 +320,7 @@ export async function runScheduledScan(
       lastWatchAt,
       lastDiscoveryAt,
       lastOpsAlertAt,
+      lastAutopsyAt,
       network,
       lastStats: stats,
     };
@@ -296,7 +328,8 @@ export async function runScheduledScan(
     if (
       shouldPersistState(previous, stats, started, false) ||
       lastOpsAlertAt !== (previous.lastOpsAlertAt ?? null) ||
-      lastDiscoveryAt !== (previous.lastDiscoveryAt ?? null)
+      lastDiscoveryAt !== (previous.lastDiscoveryAt ?? null) ||
+      lastAutopsyAt !== (previous.lastAutopsyAt ?? null)
     ) {
       await saveCronState(env, nextState);
     }
@@ -318,7 +351,7 @@ export async function runScheduledScan(
     }
 
     console.log(
-      `[cron] ok discovered=${stats.discovered} scanned=${stats.scanned} scams=${stats.scams} suspicious=${stats.suspicious} errors=${stats.errors} blocks=${stats.fromBlock}-${stats.toBlock} sources=${JSON.stringify(stats.bySource)} watch=${JSON.stringify(stats.watch ?? null)} watchSkipped=${Boolean(stats.watchSkipped)}`,
+      `[cron] ok discovered=${stats.discovered} scanned=${stats.scanned} scams=${stats.scams} suspicious=${stats.suspicious} errors=${stats.errors} blocks=${stats.fromBlock}-${stats.toBlock} sources=${JSON.stringify(stats.bySource)} watch=${JSON.stringify(stats.watch ?? null)} watchSkipped=${Boolean(stats.watchSkipped)} autopsy=${JSON.stringify(stats.autopsy ?? null)} autopsySkipped=${Boolean(stats.autopsySkipped)}`,
     );
 
     return { ok: true, stats };
