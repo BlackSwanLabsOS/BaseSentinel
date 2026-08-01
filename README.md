@@ -156,7 +156,15 @@ Settlement for buyers of BaseSentinel remains: send USDC on Base → retry with 
 | [Eliza OS](packages/eliza-basesentinel) | `npm i @basesentinel/eliza` | Plugin action `SCAN_CONTRACT` |
 | [LangChain](packages/langchain-basesentinel) | `pip install basesentinel-langchain` | `BaseSentinelScanTool` for Python agents |
 
-All three SDKs auto-pay **0.005 USDC** on Base when the runtime wallet key is set. See each package README for env vars.
+All three SDKs auto-pay **0.005 USDC** on Base when the runtime wallet key is set.
+
+| Env | Required | Purpose |
+|-----|----------|---------|
+| `BASESENTINEL_PRIVATE_KEY` | yes | Base wallet with USDC (agent pays per scan) |
+| `BASESENTINEL_RPC_URL` | no | Base RPC (default public) |
+| `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
+
+Details and install examples: each package README under `packages/`.
 
 Listed in the [Remote OpenClaw MCP directory](https://www.remoteopenclaw.com/mcp)
 
