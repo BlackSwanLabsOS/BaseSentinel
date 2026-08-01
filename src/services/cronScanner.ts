@@ -9,7 +9,7 @@ import {
   scanContract,
   scanResultAgeSeconds,
 } from "./scanner";
-import { notifyCronDigest, notifyOpsDiscovery } from "./discord";
+import { notifyCronDigest, notifyOpsAlert } from "./discord";
 import { runWatchChecks, type WatchRunStats } from "./watchList";
 import { kvPutBestEffort } from "./kvSafe";
 
@@ -27,6 +27,10 @@ const CRON_CACHE_FRESH_SECONDS = 6 * 60 * 60;
 const QUIET_STATE_WRITE_MS = 5 * 60 * 1000;
 /** How often to list/re-scan paid watches (each run is multiple KV ops). */
 const WATCH_INTERVAL_MS = 5 * 60 * 1000;
+/** Ops Discord: no listings this long → warn (Base is rarely dead that long). */
+const STALE_DISCOVERY_MS = 45 * 60 * 1000;
+/** Don't spam #ops-logs more often than this when problems persist. */
+const OPS_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
 
 export interface CronState {
   lastRunAt: string | null;
@@ -35,6 +39,10 @@ export interface CronState {
   lastProcessedBlock: number | null;
   /** Last time watch batch ran (throttled separately from discovery). */
   lastWatchAt?: string | null;
+  /** Last tick with discovered > 0 (stale-discovery ops alerts). */
+  lastDiscoveryAt?: string | null;
+  /** Last ops Discord alert (cooldown). */
+  lastOpsAlertAt?: string | null;
   network: string;
   lastStats: CronRunStats | null;
 }
@@ -105,6 +113,23 @@ function shouldPersistState(
   return nowMs - last >= QUIET_STATE_WRITE_MS;
 }
 
+function opsAlertAllowed(previous: CronState, nowMs: number): boolean {
+  if (!previous.lastOpsAlertAt) return true;
+  const last = Date.parse(previous.lastOpsAlertAt);
+  if (Number.isNaN(last)) return true;
+  return nowMs - last >= OPS_ALERT_COOLDOWN_MS;
+}
+
+function quietMinutesSince(
+  iso: string | null | undefined,
+  nowMs: number,
+): number | undefined {
+  if (!iso) return undefined;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return undefined;
+  return Math.max(0, Math.round((nowMs - t) / 60_000));
+}
+
 export async function getCronState(env: Env): Promise<CronState> {
   const stored = (await env.SCAN_CACHE.get(CRON_STATE_KEY, "json")) as
     | CronState
@@ -117,6 +142,8 @@ export async function getCronState(env: Env): Promise<CronState> {
       lastError: null,
       lastProcessedBlock: null,
       lastWatchAt: null,
+      lastDiscoveryAt: null,
+      lastOpsAlertAt: null,
       network: resolveNetwork(env),
       lastStats: null,
     }
@@ -216,32 +243,62 @@ export async function runScheduledScan(
 
     stats.durationMs = Date.now() - started;
 
+    const lastDiscoveryAt =
+      stats.discovered > 0
+        ? runAt
+        : (previous.lastDiscoveryAt ?? null);
+
+    let lastOpsAlertAt = previous.lastOpsAlertAt ?? null;
+    let opsReason: "errors" | "stale_discovery" | null = null;
+
+    if (stats.errors > 0) {
+      opsReason = "errors";
+    } else if (stats.discovered === 0 && lastDiscoveryAt) {
+      const lastDiscMs = Date.parse(lastDiscoveryAt);
+      if (
+        Number.isFinite(lastDiscMs) &&
+        started - lastDiscMs >= STALE_DISCOVERY_MS
+      ) {
+        opsReason = "stale_discovery";
+      }
+    }
+
+    if (opsReason && opsAlertAllowed(previous, started)) {
+      const opsTask = notifyOpsAlert(env.DISCORD_OPS_WEBHOOK_URL, {
+        reason: opsReason,
+        discovered: stats.discovered,
+        scanned: stats.scanned,
+        scams: stats.scams,
+        suspicious: stats.suspicious,
+        errors: stats.errors,
+        fromBlock: stats.fromBlock,
+        toBlock: stats.toBlock,
+        bySource: stats.bySource,
+        quietMinutes: quietMinutesSince(lastDiscoveryAt, started),
+      });
+      if (ctx) ctx.waitUntil(opsTask);
+      else await opsTask;
+      lastOpsAlertAt = runAt;
+    }
+
     const nextState: CronState = {
       lastRunAt: runAt,
       lastSuccessAt: runAt,
       lastError: null,
       lastProcessedBlock: discovery.toBlock,
       lastWatchAt,
+      lastDiscoveryAt,
+      lastOpsAlertAt,
       network,
       lastStats: stats,
     };
 
-    if (shouldPersistState(previous, stats, started, false)) {
+    if (
+      shouldPersistState(previous, stats, started, false) ||
+      lastOpsAlertAt !== (previous.lastOpsAlertAt ?? null) ||
+      lastDiscoveryAt !== (previous.lastDiscoveryAt ?? null)
+    ) {
       await saveCronState(env, nextState);
-    }
-
-    if (stats.discovered > 0) {
-      const opsTask = notifyOpsDiscovery(env.DISCORD_OPS_WEBHOOK_URL, {
-        discovered: stats.discovered,
-        scanned: stats.scanned,
-        scams: stats.scams,
-        suspicious: stats.suspicious,
-        fromBlock: stats.fromBlock,
-        toBlock: stats.toBlock,
-        bySource: stats.bySource,
-      });
-      if (ctx) ctx.waitUntil(opsTask);
-      else await opsTask;
     }
 
     const digestTask = notifyCronDigest(env.DISCORD_WEBHOOK_URL, {
@@ -271,13 +328,32 @@ export async function runScheduledScan(
     stats.durationMs = Date.now() - started;
     stats.errors = 1;
 
-    await saveCronState(env, {
+    const fatalState: CronState = {
       ...previous,
       lastRunAt: runAt,
       lastError: message,
       lastStats: stats,
       network,
-    });
+    };
+
+    if (opsAlertAllowed(previous, started)) {
+      const opsTask = notifyOpsAlert(env.DISCORD_OPS_WEBHOOK_URL, {
+        reason: "fatal",
+        message,
+        discovered: 0,
+        scanned: 0,
+        scams: 0,
+        suspicious: 0,
+        errors: 1,
+        fromBlock: 0,
+        toBlock: 0,
+      });
+      if (ctx) ctx.waitUntil(opsTask);
+      else await opsTask;
+      fatalState.lastOpsAlertAt = runAt;
+    }
+
+    await saveCronState(env, fatalState);
 
     console.error("[cron] fatal:", message);
     return { ok: false, stats, error: message };

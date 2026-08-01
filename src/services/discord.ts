@@ -175,16 +175,32 @@ export type OpsDiscoveryPayload = Pick<
   "discovered" | "scanned" | "scams" | "suspicious" | "fromBlock" | "toBlock" | "bySource"
 >;
 
+export type OpsAlertReason = "errors" | "fatal" | "stale_discovery";
+
+export interface OpsAlertPayload {
+  reason: OpsAlertReason;
+  message?: string;
+  discovered: number;
+  scanned: number;
+  scams: number;
+  suspicious: number;
+  errors: number;
+  fromBlock: number;
+  toBlock: number;
+  bySource?: Record<string, number>;
+  /** Minutes since last non-zero discovery (stale alerts). */
+  quietMinutes?: number;
+}
+
 /**
- * Ops-only discovery log (separate webhook / #ops-logs).
- * Fires on discovered > 0 — no SCAM alert styling.
+ * Ops-only alerts (#ops-logs): cron errors, fatal failures, or stale discovery.
+ * Routine "discovered > 0" noise stays in Worker logs only.
  */
-export async function notifyOpsDiscovery(
+export async function notifyOpsAlert(
   webhookUrl: string | undefined,
-  payload: OpsDiscoveryPayload,
+  payload: OpsAlertPayload,
 ): Promise<void> {
   if (!webhookUrl) return;
-  if (payload.discovered <= 0) return;
 
   const sources =
     payload.bySource && Object.keys(payload.bySource).length > 0
@@ -193,21 +209,44 @@ export async function notifyOpsDiscovery(
           .join(" · ")
       : "—";
 
+  const title =
+    payload.reason === "fatal"
+      ? "ops — cron FATAL"
+      : payload.reason === "stale_discovery"
+        ? "ops — discovery quiet"
+        : "ops — cron errors";
+
+  const color =
+    payload.reason === "fatal"
+      ? 0xdc2626
+      : payload.reason === "stale_discovery"
+        ? 0xf59e0b
+        : 0xea580c;
+
+  const reasonLine =
+    payload.reason === "stale_discovery"
+      ? `No new listings discovered for ~${payload.quietMinutes ?? "?"} min (Base usually isn't this quiet).`
+      : payload.reason === "fatal"
+        ? payload.message ?? "Cron threw before completing the tick."
+        : payload.message ??
+          `Tick finished with ${payload.errors} error(s) (scan/watch failures).`;
+
   const body = {
     content: null,
     embeds: [
       {
-        title: "ops — discovery",
-        color: 0x64748b,
+        title,
+        description: reasonLine,
+        color,
         fields: [
           {
-            name: "Discovered",
-            value: `**${payload.discovered}**`,
+            name: "Errors",
+            value: `**${payload.errors}**`,
             inline: true,
           },
           {
-            name: "Scanned",
-            value: `**${payload.scanned}**`,
+            name: "Discovered / scanned",
+            value: `**${payload.discovered}** / **${payload.scanned}**`,
             inline: true,
           },
           {
@@ -241,15 +280,25 @@ export async function notifyOpsDiscovery(
     });
     if (!response.ok) {
       console.warn(
-        `[discord] ops discovery failed HTTP ${response.status} ${response.statusText}`,
+        `[discord] ops alert failed HTTP ${response.status} ${response.statusText}`,
       );
     }
   } catch (error) {
     console.warn(
-      "[discord] ops discovery error:",
+      "[discord] ops alert error:",
       error instanceof Error ? error.message : error,
     );
   }
+}
+
+/** @deprecated Use notifyOpsAlert — kept for older imports. */
+export async function notifyOpsDiscovery(
+  webhookUrl: string | undefined,
+  payload: OpsDiscoveryPayload,
+): Promise<void> {
+  // Legacy path was "every discovery" — no-op to avoid accidental spam if called.
+  void webhookUrl;
+  void payload;
 }
 
 /**

@@ -21,8 +21,8 @@ export interface Env {
   /** Optional Discord webhook for threat alerts. */
   DISCORD_WEBHOOK_URL?: string;
   /**
-   * Optional Discord webhook for ops-only discovery logs (no SCAM noise).
-   * Create a separate channel webhook e.g. #ops-logs.
+   * Optional Discord webhook for ops-only alerts (#ops-logs):
+   * cron errors, fatal failures, stale discovery — not routine listings.
    */
   DISCORD_OPS_WEBHOOK_URL?: string;
   /**
