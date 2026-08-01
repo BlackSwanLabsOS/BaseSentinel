@@ -31,9 +31,7 @@ Also: `risk_flags`, `reasons`, enrichment dossier. Continuous coverage of Uniswa
 X-Payment-Proof: 0xYOUR_TX_HASH
 ```
 
-Settlement is **`tx_hash_proof` only** — not Coinbase facilitator / EIP-3009 / Base64 `PAYMENT-SIGNATURE` payloads.
-
-The tx-hash is bound to the resource (e.g. contract address). Reuse on another address is rejected. Same hash cannot be replayed for a new paid call (KV anti-replay).
+Pay with an on-chain USDC Transfer, then send that transaction hash as `X-Payment-Proof`. Each proof is bound to one resource and can be redeemed once.
 
 ### Treasury (Base)
 
@@ -137,16 +135,14 @@ Machine catalogs on our host (always current):
 - https://api.blackswanlabs.pl/tools.json
 - https://api.blackswanlabs.pl/docs
 
-External directories (status as of 2026-07-30):
+External directories:
 
 | Directory | Status | Notes |
 |-----------|--------|--------|
-| [Ontario Protocol](https://ontarioprotocol.com/discover) | **Listed** (`ready`, paid listing) | Scan @ `0.005 USDC`. Integrity still “pending” because buyers settle with our **tx-hash proof**, not Coinbase facilitator / EIP-3009. |
-| [Virtuals ACP](https://app.virtuals.io/acp/agent/019faeb2-bed1-7699-9aa0-6899796a223d) | **Agent registered** | BaseSentinel offerings point at `api.blackswanlabs.pl`. |
-| [x402-list](https://x402-list.com/) | **Submitted — awaiting approval** | Resubmitted after fixing Cloudflare access for their probes. |
-| Coinbase x402 Bazaar | **Blocked on settlement model** | Validate/readiness can pass; full Bazaar indexing expects facilitator settle. We intentionally settle via **`tx_hash_proof`** (`X-Payment-Proof`), so we do not complete that payment path. |
-
-Settlement for buyers of BaseSentinel remains: send USDC on Base → retry with `X-Payment-Proof: <tx_hash>`.
+| [Ontario Protocol](https://ontarioprotocol.com/discover) | **Listed** | Scan @ `0.005 USDC` |
+| [Virtuals ACP](https://app.virtuals.io/acp/agent/019faeb2-bed1-7699-9aa0-6899796a223d) | **Agent registered** | Offerings point at `api.blackswanlabs.pl` |
+| [x402-list](https://x402-list.com/) | **Submitted — awaiting approval** | — |
+| [Remote OpenClaw](https://www.remoteopenclaw.com/mcp) | **Listed** | MCP directory |
 
 ### Agent SDKs (published)
 
@@ -165,10 +161,6 @@ All three SDKs auto-pay **0.005 USDC** on Base when the runtime wallet key is se
 | `BASESENTINEL_API_BASE_URL` | no | Default `https://api.blackswanlabs.pl` |
 
 Details and install examples: each package README under `packages/`.
-
-Listed in the [Remote OpenClaw MCP directory](https://www.remoteopenclaw.com/mcp)
-
-Directories: [x402 List](https://x402-list.com/)
 
 ---
 
