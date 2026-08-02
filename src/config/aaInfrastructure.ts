@@ -16,7 +16,7 @@ const AA_MISATTRIBUTED_CREATORS = new Set<string>([
   "0x0000000071727de22e5e9d8baf0edac6f37da032",
   // EntryPoint v0.8 (canonical CREATE2 when present)
   "0x4337084d9e255ff0702461cf8895ce9e3b5ff108",
-  // Hot Base bundler (Coinbase Smart Wallet / AA infra) — GoPlus FP on Zora
+  // Hot Base bundler (Coinbase Smart Wallet / AA infra) — GoPlus false positive on Zora
   "0x048ef1062cbb39b338ac2685da72adf104b4cef5",
 ]);
 

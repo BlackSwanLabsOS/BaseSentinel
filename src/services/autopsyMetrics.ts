@@ -10,7 +10,7 @@ import { isAaInfrastructureAddress } from "../config/aaInfrastructure";
 /** Minimum age of a SCAM flag before autopsy runs. */
 export const AUTOPSY_MIN_AGE_MS = 24 * 60 * 60 * 1000;
 
-/** Max SCAM contracts processed per daily batch (RPC thrift). */
+/** Max SCAM contracts processed per daily batch (limits RPC usage). */
 export const AUTOPSY_MAX_PER_RUN = 20;
 
 /** How often the autopsy batch may run (shared minute cron throttle). */

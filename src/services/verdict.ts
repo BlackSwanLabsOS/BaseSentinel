@@ -93,7 +93,7 @@ export function collectRiskFlags(input: VerdictInput): string[] {
 
   const listing = (input.listingSource || "").toLowerCase();
   const zoraLike = listing.startsWith("zora");
-  // Zora / minimal proxies are normal — don't flag proxy alone there.
+  // Zora / minimal proxies are normal — do not flag proxy alone there.
   if (
     !zoraLike &&
     (goplus?.isProxy === true ||

@@ -96,7 +96,7 @@ export const TOPIC_ZORA_COIN_CREATED_LEGACY =
 /**
  * Base discovery sources.
  * 24h probe (2026-07-30, mainnet.base.org): disable only proven-dead legacy Zora.
- * Aerodrome / Virtuals stayed enabled despite 0 events — re-check topic / narrativ later.
+ * Aerodrome / Virtuals stayed enabled despite 0 events — re-check topic / narrative later.
  */
 const BASE_FACTORIES: DexFactorySource[] = [
   {

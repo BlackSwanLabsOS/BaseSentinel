@@ -194,7 +194,7 @@ export interface OpsAlertPayload {
 
 /**
  * Ops-only alerts (#ops-logs): cron errors, fatal failures, or stale discovery.
- * Routine "discovered > 0" noise stays in Worker logs only.
+ * Routine "discovered > 0" events stay in Worker logs only.
  */
 export async function notifyOpsAlert(
   webhookUrl: string | undefined,
@@ -296,14 +296,14 @@ export async function notifyOpsDiscovery(
   webhookUrl: string | undefined,
   payload: OpsDiscoveryPayload,
 ): Promise<void> {
-  // Legacy path was "every discovery" — no-op to avoid accidental spam if called.
+  // Legacy path was "every discovery" — no-op to avoid accidental alerts if called.
   void webhookUrl;
   void payload;
 }
 
 /**
  * Cron digest: only when the tick flagged threats.
- * Routine "discovered/scanned" noise stays out of Discord (alerts use notifyDiscord).
+ * Routine "discovered/scanned" events stay out of Discord (alerts use notifyDiscord).
  */
 export async function notifyCronDigest(
   webhookUrl: string | undefined,

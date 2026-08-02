@@ -225,7 +225,7 @@ export function analyzeBytecode(bytecode: string): AnalysisResult {
 /**
  * Merges GoPlus flags into a local bytecode analysis result.
  * Critical GoPlus signals force SCAM / riskScore 100.
- * @param listingSource Optional discovery source (e.g. zora_coin_v4) for FP softens.
+ * @param listingSource Optional discovery source (e.g. zora_coin_v4) for false-positive softening.
  */
 export function mergeGoPlusEnrichment(
   local: AnalysisResult,

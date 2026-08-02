@@ -28,14 +28,14 @@ const MAX_SCANS_PER_RUN = 10;
  */
 const CRON_CACHE_FRESH_SECONDS = 6 * 60 * 60;
 /**
- * On quiet ticks, persist cron cursor at most this often (KV write thrift).
+ * On quiet ticks, persist cron cursor at most this often to limit KV writes.
  */
 const QUIET_STATE_WRITE_MS = 5 * 60 * 1000;
 /** How often to list/re-scan paid watches (each run is multiple KV ops). */
 const WATCH_INTERVAL_MS = 5 * 60 * 1000;
-/** Ops Discord: no listings this long → warn (Base is rarely dead that long). */
+/** Ops Discord: no listings this long → warn (Base is rarely idle that long). */
 const STALE_DISCOVERY_MS = 45 * 60 * 1000;
-/** Don't spam #ops-logs more often than this when problems persist. */
+/** Minimum interval between repeated ops-log alerts while a problem persists. */
 const OPS_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
 
 export interface CronState {
