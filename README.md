@@ -141,7 +141,7 @@ External directories:
 |-----------|--------|--------|
 | [Ontario Protocol](https://ontarioprotocol.com/discover) | **Listed** | Scan @ `0.005 USDC` |
 | [Virtuals ACP](https://app.virtuals.io/acp/agent/019faeb2-bed1-7699-9aa0-6899796a223d) | **Agent registered** | Offerings point at `api.blackswanlabs.pl` |
-| [x402-list](https://x402-list.com/) | **Submitted — awaiting approval** | — |
+| [x402-list](https://x402-list.com/services/basesentinel) | **Listed** | Scan @ `0.005 USDC` |
 ### Agent SDKs (published)
 
 | Package | Install | What it does |
